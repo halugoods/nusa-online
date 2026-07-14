@@ -1,0 +1,858 @@
+[
+  {
+    "id": "TC001",
+    "title": "Complete checkout and see order success",
+    "description": "A shopper can submit a pickup order with required details and receive a successful order confirmation with an invoice number.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Continue to checkout"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the customer name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the WhatsApp number"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an order success confirmation is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invoice number is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Place an order successfully with customer details",
+    "description": "A shopper can fill required checkout details, review the order summary, submit the order, and reach the success confirmation with an invoice number.",
+    "category": "Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill customer name with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Fill WhatsApp number with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Add optional notes"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order success confirmation is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invoice number is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Add a product to the cart from browsing",
+    "description": "A shopper can add a product from the catalog and see the cart summary update.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Click a product card to add it to the cart"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the sticky cart summary is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart item count increases"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Show store catalog with header and products",
+    "description": "A shopper can open a store page and see the store header, catalog, and stock indicators needed to start browsing.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the store header is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product catalog is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify stock indicators are displayed for products"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Continue from cart to checkout",
+    "description": "A shopper can move from the cart review step into the checkout form.",
+    "category": "Cart Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Continue to checkout"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the checkout form is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart summary is still available during checkout"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Open the cart and review items",
+    "description": "A shopper can open the cart and review the items, quantities, and totals before checkout.",
+    "category": "Cart Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify cart items are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart subtotal summary is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Filter products by category",
+    "description": "A shopper can narrow the catalog by category and see only matching products.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Select the Makanan category filter"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product list is updated to show matching products"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected category filter is active"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Search for a product by name",
+    "description": "A shopper can search the catalog by product name and see matching results.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the search field with a product name"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify matching products are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify non-matching products are not shown"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Update cart quantities and remove an item",
+    "description": "A shopper can increase, decrease, and remove cart items while seeing the cart summary change accordingly.",
+    "category": "Cart Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Increase the item quantity"
+      },
+      {
+        "type": "action",
+        "description": "Decrease the item quantity until it is removed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the item is removed from the cart"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart summary reflects the updated total"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Search orders by WhatsApp number",
+    "description": "A customer can enter a WhatsApp number and view matching orders with their key details in order tracking.",
+    "category": "Order Tracking",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the order tracking view"
+      },
+      {
+        "type": "action",
+        "description": "Enter a WhatsApp number"
+      },
+      {
+        "type": "action",
+        "description": "Search for orders"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify matching orders are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify order invoices and status details are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Return from success to order tracking",
+    "description": "A shopper can move from the order success screen to order tracking and review the submitted order state.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Continue to checkout"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the customer name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the WhatsApp number"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "action",
+        "description": "Open order tracking from the success screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order tracking view is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the submitted order appears in tracking"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC012",
+    "title": "Cancel a newly placed order from tracking",
+    "description": "A customer can cancel an order that is still newly placed and see the cancellation reflected in tracking.",
+    "category": "Order Tracking",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the order tracking view"
+      },
+      {
+        "type": "action",
+        "description": "Enter a WhatsApp number"
+      },
+      {
+        "type": "action",
+        "description": "Search for orders"
+      },
+      {
+        "type": "action",
+        "description": "Cancel an eligible order"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the cancellation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order is shown as cancelled"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC013",
+    "title": "Clear the cart",
+    "description": "A shopper can clear all cart items and return to an empty cart state.",
+    "category": "Cart Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Clear all cart items"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart is empty"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the empty cart state is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC014",
+    "title": "Prevent submitting checkout with an empty cart",
+    "description": "Checkout shows validation feedback when the cart is empty and the user tries to place an order.",
+    "category": "Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill customer name with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Fill WhatsApp number with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a cart required validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "Require WhatsApp number before submitting checkout",
+    "description": "Checkout shows validation feedback when the WhatsApp number is left empty and the order is not submitted.",
+    "category": "Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill customer name with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a required WhatsApp validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Require customer name before submitting checkout",
+    "description": "Checkout shows validation feedback when the customer name is left empty and the order is not submitted.",
+    "category": "Checkout",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill WhatsApp number with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a required name validation error is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "Cancel an eligible online order from tracking",
+    "description": "A customer can cancel an order that is still eligible for cancellation from the tracking view.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the order tracking view"
+      },
+      {
+        "type": "action",
+        "description": "Search for an order with an eligible status"
+      },
+      {
+        "type": "action",
+        "description": "Cancel the order"
+      },
+      {
+        "type": "action",
+        "description": "Confirm the cancellation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order status is updated after cancellation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order no longer appears as active"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC018",
+    "title": "Open order tracking from order success",
+    "description": "After a successful order, the customer can go directly to order tracking from the confirmation screen.",
+    "category": "Order Success",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill customer name with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Fill WhatsApp number with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "action",
+        "description": "Open order tracking from the success screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order tracking view is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC019",
+    "title": "Browse the landing page and open the APK download link",
+    "description": "An anonymous visitor can view the NUSA landing page branding and follow the APK download link.",
+    "category": "Landing Page",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "action",
+        "description": "Click the APK download link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the landing page branding is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a download link is available"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC020",
+    "title": "Return to browsing from order success",
+    "description": "After a successful order, the customer can return to product browsing from the confirmation screen.",
+    "category": "Order Success",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the checkout view"
+      },
+      {
+        "type": "action",
+        "description": "Fill customer name with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Fill WhatsApp number with a valid value"
+      },
+      {
+        "type": "action",
+        "description": "Select a valid pickup time"
+      },
+      {
+        "type": "action",
+        "description": "Select a payment method"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order"
+      },
+      {
+        "type": "action",
+        "description": "Return to browsing from the success screen"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product browsing view is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC021",
+    "title": "Show validation when checkout is incomplete",
+    "description": "A shopper sees validation feedback when required checkout details are missing.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Add a product to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Open the cart view"
+      },
+      {
+        "type": "action",
+        "description": "Continue to checkout"
+      },
+      {
+        "type": "action",
+        "description": "Submit the order without filling the required fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify validation errors are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order is not submitted"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC022",
+    "title": "Browse an out-of-stock product and add it to cart",
+    "description": "A shopper can still see an out-of-stock product and add it to the cart as shown by the current UI behavior.",
+    "category": "Store Product Browsing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Locate a product marked as out of stock"
+      },
+      {
+        "type": "action",
+        "description": "Click the out-of-stock product card to add it to the cart"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cart summary updates after adding the product"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the out-of-stock product remains visible in the catalog"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC023",
+    "title": "Show no-results state when tracking finds no orders",
+    "description": "Order tracking shows an empty state when a searched WhatsApp number has no matching orders.",
+    "category": "Order Tracking",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the order tracking view"
+      },
+      {
+        "type": "action",
+        "description": "Enter a WhatsApp number with no matching orders"
+      },
+      {
+        "type": "action",
+        "description": "Search for orders"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a no-results message is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC024",
+    "title": "Cancel is unavailable for non-new orders",
+    "description": "Order tracking does not offer cancellation for orders that are already beyond the newly placed status.",
+    "category": "Order Tracking",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /toko/[storeId]"
+      },
+      {
+        "type": "action",
+        "description": "Open the order tracking view"
+      },
+      {
+        "type": "action",
+        "description": "Enter a WhatsApp number"
+      },
+      {
+        "type": "action",
+        "description": "Search for orders"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify non-new order statuses are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no cancellation option is shown for those orders"
+      }
+    ],
+    "priority": "Low"
+  }
+]

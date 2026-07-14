@@ -357,7 +357,7 @@ function LicensesTab() {
                     <th className="px-4 py-3 font-medium text-gray-600">Key</th>
                     <th className="px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Pemilik</th>
                     <th className="px-4 py-3 font-medium text-gray-600">Status</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Device</th>
+                    <th className="px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Google ID</th>
                     <th className="px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Tanggal</th>
                     <th className="px-4 py-3 font-medium text-gray-600 text-right">Aksi</th>
                   </tr>
@@ -382,7 +382,11 @@ function LicensesTab() {
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
                           <span className="text-xs font-mono font-medium text-gray-600">
-                            {lic.device_count}/2
+                            {lic.google_user_id
+                              ? lic.google_user_id.length > 16
+                                ? lic.google_user_id.slice(0, 16) + "..."
+                                : lic.google_user_id
+                              : <span className="text-gray-300">—</span>}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">
@@ -404,7 +408,7 @@ function LicensesTab() {
                                 Revoke
                               </button>
                             )}
-                            {lic.status === "issued" && lic.device_count === 0 && (
+                            {lic.status === "issued" && (lic.activation_count ?? 0) === 0 && (
                               <button
                                 onClick={() => handleDelete(lic.id)}
                                 className="px-2 py-1 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -506,13 +510,14 @@ function LicenseDetailModal({
             <DetailRow label="Serial" value={license.serial} />
             <DetailRow label="Product" value={license.product} />
             <DetailRow label="Pemilik" value={license.owner_email ?? "—"} />
+            <DetailRow label="Google ID" value={license.google_user_id ?? "—"} />
             <DetailRow label="Dibuat" value={formatDate(license.created_at)} />
           </div>
 
           {/* Activations */}
           <div className="mt-6">
             <h4 className="font-semibold text-gray-900 mb-3 text-sm">
-              Device ({license.activations?.length ?? 0}/2)
+              Aktivasi ({license.activations?.length ?? 0})
             </h4>
             {(!license.activations || license.activations.length === 0) ? (
               <p className="text-xs text-gray-400">Belum ada aktivasi</p>

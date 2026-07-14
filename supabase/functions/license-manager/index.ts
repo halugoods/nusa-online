@@ -261,7 +261,7 @@ async function handleList(supabase: any, params: any) {
 
   const licenses = (data ?? []).map((l: any) => ({
     ...l,
-    device_count: activationCounts[l.id] ?? 0,
+    activation_count: activationCounts[l.id] ?? 0,
     activations: undefined,
   }));
 

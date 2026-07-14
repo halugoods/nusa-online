@@ -1,0 +1,126 @@
+version: "2"
+type: frontend
+tech_stack:
+  - TypeScript
+  - Next.js 14 App Router
+  - Tailwind CSS
+  - Supabase JS Client
+routes:
+  - path: /
+    file: src/app/page.tsx
+    auth_required: false
+    description: Landing page — branding NUSA, download APK link
+  - path: /toko/[storeId]
+    file: src/app/toko/[storeId]/page.tsx
+    auth_required: false
+    description: Dynamic storefront — product browsing, cart, checkout, order tracking
+features:
+  - name: Landing Page
+    description: Branding page for NUSA Toko Online with download APK link
+    files:
+      - src/app/page.tsx
+      - src/app/layout.tsx
+    entry_route: /
+    user_interactions:
+      - See NUSA branding and description
+      - Click "Download APK" link to GitHub releases
+    api_calls: []
+    auth_required: false
+  - name: Store Product Browsing
+    description: Customer browses products by category with search, adds to cart
+    files:
+      - src/app/toko/[storeId]/page.tsx
+      - src/lib/supabase.ts
+    entry_route: /toko/[storeId]
+    user_interactions:
+      - See store header with name and open hours
+      - Search products by name via search input
+      - Filter products by category (Semua, Makanan, Minuman, Sembako, Lainnya)
+      - Click product card to add to cart
+      - See sticky cart button with item count and total at bottom
+      - See "Habis" or "Sisa X" stock indicators
+    api_calls:
+      - method: GET
+        endpoint: Supabase store_settings (eq store_id, eq is_active true)
+      - method: GET
+        endpoint: Supabase online_products (eq store_id, eq is_published true)
+    auth_required: false
+  - name: Cart Management
+    description: Review and modify cart items, adjust quantities, clear cart
+    files:
+      - src/app/toko/[storeId]/page.tsx
+    entry_route: /toko/[storeId] (cart view)
+    user_interactions:
+      - View cart items with name, unit price, quantity, subtotal
+      - Increase/decrease quantity with +/- buttons
+      - Remove item by reducing quantity to 0
+      - Clear all cart items
+      - See subtotal summary
+      - Click "Lanjutkan ke Checkout"
+    api_calls: []
+    auth_required: false
+  - name: Checkout
+    description: Fill customer info, pickup time, payment method, notes; submit order
+    files:
+      - src/app/toko/[storeId]/page.tsx
+      - src/lib/supabase.ts
+    entry_route: /toko/[storeId] (checkout view)
+    user_interactions:
+      - Fill customer name (required)
+      - Fill WhatsApp number (required)
+      - Select pickup time from dropdown (Segera, 30 menit, 1 jam, 2 jam, Besok)
+      - Select payment method (Tunai, QRIS, Transfer)
+      - Add optional notes
+      - Review order summary with all items and total
+      - Click "Pesan Sekarang" to submit
+      - See validation alerts if name/phone/cart empty
+    api_calls:
+      - method: POST
+        endpoint: Supabase online_orders (insert)
+    auth_required: false
+  - name: Order Success
+    description: Confirmation screen after successful order placement
+    files:
+      - src/app/toko/[storeId]/page.tsx
+    entry_route: /toko/[storeId] (success view)
+    user_interactions:
+      - See green checkmark and "Pesanan Berhasil!" message
+      - See invoice number displayed
+      - Click "Kembali" to return to product browsing
+      - Click "Lacak Pesanan" to go to order tracking
+    api_calls: []
+    auth_required: false
+  - name: Order Tracking
+    description: Track orders by WhatsApp number with status display and cancel capability
+    files:
+      - src/app/toko/[storeId]/page.tsx
+      - src/lib/supabase.ts
+    entry_route: /toko/[storeId] (orders view)
+    user_interactions:
+      - Enter WhatsApp number to search
+      - Click "Cari" to load orders
+      - See order list with invoice, items, status badge, date, payment method, total
+      - See status with color-coded badges (Online Baru=amber, Disiapkan=green, etc.)
+      - Cancel order if status is "Online Baru" with confirmation dialog
+    api_calls:
+      - method: GET
+        endpoint: Supabase online_orders (eq store_id, eq customer_phone)
+      - method: PATCH
+        endpoint: Supabase online_orders (update status to Dibatalkan)
+    auth_required: false
+known_limitations:
+  - issue: Product images use placeholder emoji (📦) — no real image upload implemented
+    location: src/app/toko/[storeId]/page.tsx (lines 199)
+    impact: All products show the same box emoji instead of actual product photos
+  - issue: No stock validation at checkout — customer can order even if stock is 0
+    location: src/app/toko/[storeId]/page.tsx (handleSubmit function)
+    impact: Customers can place orders for out-of-stock items; stock display is informational only
+  - issue: Order cancellation only works for "Online Baru" status — no guard in UI for other statuses but API enforces it
+    location: src/lib/supabase.ts (cancelOrder function)
+    impact: Customers may try to cancel orders that are already being prepared; button only shows for "Online Baru" status
+  - issue: No loading indicators on product add-to-cart — no visual feedback that item was added
+    location: src/app/toko/[storeId]/page.tsx (addToCart function)
+    impact: Users may not realize an item was added to cart, leading to duplicate taps
+  - issue: Cart state is lost on page refresh — no persistence (localStorage or similar)
+    location: src/app/toko/[storeId]/page.tsx (useState for cart)
+    impact: Accidental refresh or back navigation loses all cart items

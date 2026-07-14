@@ -9,7 +9,8 @@ export interface LicenseRecord {
   product: string;
   status: "issued" | "activated" | "revoked";
   owner_email: string | null;
-  device_count: number;
+  google_user_id?: string | null;
+  activation_count: number;
   created_at: string;
 }
 
@@ -17,6 +18,7 @@ export interface ActivationRecord {
   id: string;
   license_id: string;
   device_id: string;
+  google_user_id?: string | null;
   created_at: string;
 }
 

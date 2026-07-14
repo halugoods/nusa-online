@@ -1,0 +1,24 @@
+{
+  "status": "init",
+  "scope": "codebase",
+  "type": "frontend",
+  "localEndpoint": "http://localhost:3000/",
+  "serverPort": 52222,
+  "executionArgs": {
+    "projectName": "nusa-online",
+    "projectPath": "C:\\Users\\ertyui\\ZCodeProject\\nusa-online",
+    "testIds": [
+      "TC001",
+      "TC003",
+      "TC004",
+      "TC007",
+      "TC008",
+      "TC019"
+    ],
+    "additionalInstruction": "This is a Next.js 14 App Router SPA. The store page at /toko/[storeId] uses internal view state (setView) not URL routing. Views: home (product grid), cart, checkout, success, orders. All navigation between these views is via button clicks, not page navigations. Testing the /toko/[storeId] route needs an actual store_id that exists in Supabase - if no test data exists, skip store tests and only test the landing page at /. The landing page at / is standalone and should be testable.",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-BJ3zECdoQswRgkZVjl3iI7Y21cfJFTcsm46WX5Y0z3lS_E63cSKMBUYxRzggwBm6Qq_5G1XkO6pDqw9BWW2B4XAA0dMDLRM8T1YM-1oOWyDX7dM1ZpzvN9hWYWn6Q-XfKqA"
+    }
+  }
+}
