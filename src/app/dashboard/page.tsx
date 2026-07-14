@@ -562,8 +562,10 @@ function DetailRow({
 function GenerateTab() {
   const [count, setCount] = useState(1);
   const [ownerEmail, setOwnerEmail] = useState("");
+  const [buyerName, setBuyerName] = useState("");
+  const [sendEmail, setSendEmail] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ count: number; keys: string[] } | null>(null);
+  const [result, setResult] = useState<{ count: number; keys: string[]; email_sent?: boolean; email_error?: string } | null>(null);
   const [error, setError] = useState("");
   const [copiedAll, setCopiedAll] = useState(false);
 
@@ -580,7 +582,7 @@ function GenerateTab() {
     setError("");
     setResult(null);
     try {
-      const res = await generateKeys(count, ownerEmail || undefined);
+      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail);
       setResult(res);
     } catch (e: any) {
       setError(e.message);
@@ -640,6 +642,18 @@ function GenerateTab() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Nama Pembeli <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={buyerName}
+                onChange={(e) => setBuyerName(e.target.value)}
+                placeholder="Budi Santoso"
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Email Pembeli <span className="text-gray-400 font-normal">(optional)</span>
               </label>
               <input
@@ -649,6 +663,20 @@ function GenerateTab() {
                 placeholder="pembeli@email.com"
                 className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
               />
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={sendEmail}
+                  onChange={(e) => setSendEmail(e.target.checked)}
+                  disabled={!ownerEmail}
+                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary/20 accent-primary"
+                />
+                <span className="text-sm text-gray-700">
+                  Kirim key via Email{!ownerEmail ? " (isi email dulu)" : ""}
+                </span>
+              </label>
             </div>
           </div>
 
@@ -678,6 +706,26 @@ function GenerateTab() {
                 {copiedAll ? "Copied!" : "Copy Semua"}
               </button>
             </div>
+
+            {/* Email status */}
+            {ownerEmail && (
+              <div className={`mb-3 px-3 py-2 rounded-lg text-xs font-medium ${
+                result.email_sent
+                  ? "bg-green-50 text-green-700"
+                  : result.email_error
+                  ? "bg-amber-50 text-amber-700"
+                  : "bg-gray-50 text-gray-500"
+              }`}>
+                {result.email_sent
+                  ? `📧 Key berhasil dikirim ke ${ownerEmail}`
+                  : result.email_error
+                  ? `⚠️ Gagal kirim email: ${result.email_error}`
+                  : sendEmail
+                  ? "⏳ Email tidak terkirim (cek konfigurasi Resend)"
+                  : "ℹ️ Email tidak dikirim (centang 'Kirim key via Email' untuk mengirim)"}
+              </div>
+            )}
+
             <div className="bg-gray-50 rounded-lg p-3 max-h-60 overflow-y-auto">
               {result.keys.map((k, i) => (
                 <code key={i} className="block text-xs font-mono text-gray-700 py-0.5">

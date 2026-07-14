@@ -39,6 +39,8 @@ const corsHeaders = {
 const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "nusa-admin-2024";
 const PRIVATE_KEY_HEX = Deno.env.get("NUSA_PRIVATE_KEY") ?? "";
 const PUBLIC_KEY_HEX = Deno.env.get("NUSA_PUBLIC_KEY") ?? "";
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
+const RESEND_FROM_EMAIL = Deno.env.get("RESEND_FROM_EMAIL") ?? "nusa@halugoods.com";
 
 // ─── Keygen (matches tools/keygen/bin/keygen.dart exactly) ────────────
 
@@ -155,6 +157,8 @@ serve(async (req: Request) => {
 async function handleGenerate(supabase: any, params: any) {
   const count = Math.max(1, Math.min(params.count ?? 1, 100));
   const ownerEmail = params.owner_email ?? null;
+  const buyerName = params.buyer_name ?? null;
+  const sendEmail = params.send_email === true && ownerEmail !== null;
   const product = params.product ?? "nusa-kasir";
 
   const keys: { key: string; serial: string }[] = [];
@@ -183,11 +187,137 @@ async function handleGenerate(supabase: any, params: any) {
     return json({ error: error.message, generated: 0 }, 500);
   }
 
+  // Send email if requested
+  let emailSent = false;
+  let emailError: string | null = null;
+
+  if (sendEmail && ownerEmail && RESEND_API_KEY) {
+    try {
+      await sendActivationEmail(
+        ownerEmail,
+        buyerName || "Pelanggan NUSA",
+        keys.map((k) => k.key)
+      );
+      emailSent = true;
+    } catch (e) {
+      emailError = e.message;
+    }
+  }
+
   return json({
     ok: true,
     count: keys.length,
     keys: keys.map((k) => k.key),
+    email_sent: emailSent,
+    email_error: emailError,
   });
+}
+
+// ─── Send activation key email via Resend ────────────────────────────
+
+async function sendActivationEmail(
+  toEmail: string,
+  buyerName: string,
+  keys: string[]
+): Promise<void> {
+  const keyList = keys.map((k) => `<code style="background:#f3f4f6;padding:4px 8px;border-radius:6px;font-size:13px;font-family:monospace">${k}</code>`).join("<br>");
+  const singleKey = keys.length === 1 ? keys[0] : "";
+  const stepActivation = singleKey
+    ? `<p style="margin:8px 0"><strong>2.</strong> Buka aplikasi &amp; login dengan akun Google Anda</p>
+       <p style="margin:8px 0"><strong>3.</strong> Masukkan key aktivasi: <code style="background:#fde8ea;padding:3px 8px;border-radius:5px;font-size:14px;font-weight:600">${singleKey}</code></p>`
+    : `<p style="margin:8px 0"><strong>2.</strong> Buka aplikasi &amp; login dengan akun Google Anda</p>
+       <p style="margin:8px 0"><strong>3.</strong> Masukkan salah satu key aktivasi di bawah</p>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="id">
+<head><meta charset="utf-8"></head>
+<body style="font-family:Arial,Helvetica,sans-serif;background:#f7f7f9;padding:0;margin:0">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f9;padding:40px 0">
+<tr><td align="center">
+<table width="540" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.06)">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:linear-gradient(135deg,#e63946,#c1121f);padding:32px 40px;text-align:center">
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px">NUSA Kasir</h1>
+      <p style="color:#fde8ea;margin:6px 0 0;font-size:13px">Aplikasi Kasir untuk Toko Kelontong</p>
+    </td>
+  </tr>
+
+  <!-- Body -->
+  <tr>
+    <td style="padding:32px 40px">
+
+      <p style="font-size:16px;color:#1f2937;margin:0 0 8px">Halo <strong>${buyerName}</strong>, 👋</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px">
+        Terima kasih sudah membeli <strong>NUSA Kasir</strong>! Berikut key aktivasi untuk aplikasi Anda:
+      </p>
+
+      <!-- Key box -->
+      <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:24px">
+        ${keys.length === 1
+          ? `<p style="font-size:18px;font-weight:700;font-family:monospace;color:#e63946;text-align:center;margin:0;letter-spacing:0.5px">${singleKey}</p>`
+          : `<div style="font-size:14px;font-family:monospace;color:#1f2937;line-height:2;text-align:center">${keyList}</div>`}
+      </div>
+
+      <!-- Steps -->
+      <h2 style="font-size:15px;color:#1f2937;margin:0 0 12px">📱 Langkah Aktivasi</h2>
+      <div style="background:#f9fafb;border-radius:12px;padding:16px 20px;margin-bottom:24px">
+        <p style="margin:8px 0;font-size:14px;color:#374151"><strong>1.</strong> Download NUSA Kasir</p>
+        ${stepActivation}
+        <p style="margin:8px 0;font-size:14px;color:#374151"><strong>4.</strong> Setup data toko &amp; mulai jualan! 🎉</p>
+      </div>
+
+      <!-- Tips -->
+      <div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
+        <p style="margin:0;font-size:13px;color:#92400e">
+          💡 <strong>Tips:</strong> Satu lisensi bisa dipakai di beberapa perangkat selama menggunakan akun Google yang sama.
+        </p>
+      </div>
+
+      <!-- Footer -->
+      <p style="font-size:12px;color:#9ca3af;line-height:1.6;margin:0">
+        Jika ada pertanyaan, silakan hubungi kami di<br>
+        <a href="mailto:support@halugoods.com" style="color:#e63946;text-decoration:none">support@halugoods.com</a>
+        &nbsp;|&nbsp;
+        <a href="https://wa.me/6281234567890" style="color:#e63946;text-decoration:none">WhatsApp</a>
+      </p>
+    </td>
+  </tr>
+
+  <!-- Footer bar -->
+  <tr>
+    <td style="background:#f9fafb;padding:16px 40px;text-align:center">
+      <p style="font-size:11px;color:#9ca3af;margin:0">
+        © ${new Date().getFullYear()} NUSA — Aplikasi Kasir Indonesia
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: `NUSA Kasir <${RESEND_FROM_EMAIL}>`,
+      to: [toEmail],
+      subject: `Key Aktivasi NUSA Kasir — ${keys.length > 1 ? `${keys.length} Keys` : "Pesanan Anda"}`,
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Resend API error: ${res.status} ${errBody}`);
+  }
 }
 
 // ─── Add a pre-generated key (from keygen.dart CLI) ──────────────────

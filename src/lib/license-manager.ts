@@ -126,9 +126,16 @@ export async function getLicenseDetail(
 
 export async function generateKeys(
   count: number,
-  ownerEmail?: string
-): Promise<{ ok: boolean; count: number; keys: string[] }> {
-  return call("generate", { count, owner_email: ownerEmail ?? null });
+  ownerEmail?: string,
+  buyerName?: string,
+  sendEmail?: boolean
+): Promise<{ ok: boolean; count: number; keys: string[]; email_sent?: boolean; email_error?: string }> {
+  return call("generate", {
+    count,
+    owner_email: ownerEmail ?? null,
+    buyer_name: buyerName ?? null,
+    send_email: sendEmail ?? false,
+  });
 }
 
 export async function addKey(

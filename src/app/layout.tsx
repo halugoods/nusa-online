@@ -2,8 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Toko Online",
-  description: "Pesan langsung dari toko favorit Anda",
+  title: "NUSA Kasir — Aplikasi Kasir untuk Toko Kelontong",
+  description:
+    "Aplikasi Point of Sale modern untuk toko kelontong & UMKM Indonesia. Catat transaksi, kelola stok, pantau keuangan — semua dalam satu aplikasi. Lisensi seumur hidup Rp 150K.",
+  keywords: ["kasir", "aplikasi kasir", "POS", "toko kelontong", "UMKM", "Indonesia", "NUSA"],
+  openGraph: {
+    title: "NUSA Kasir — Aplikasi Kasir untuk Toko Kelontong",
+    description:
+      "Aplikasi Point of Sale modern untuk toko kelontong & UMKM Indonesia. Lisensi seumur hidup Rp 150K.",
+    type: "website",
+    locale: "id_ID",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
