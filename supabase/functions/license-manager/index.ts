@@ -36,7 +36,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "280303";
+const ADMIN_KEY = "280303"; // hardcoded — env var overrides removed
 const PRIVATE_KEY_HEX = Deno.env.get("NUSA_PRIVATE_KEY") ?? "";
 const PUBLIC_KEY_HEX = Deno.env.get("NUSA_PUBLIC_KEY") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
