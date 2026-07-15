@@ -36,7 +36,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "nusa-admin-2024";
+const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "280303";
 const PRIVATE_KEY_HEX = Deno.env.get("NUSA_PRIVATE_KEY") ?? "";
 const PUBLIC_KEY_HEX = Deno.env.get("NUSA_PUBLIC_KEY") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
@@ -159,6 +159,7 @@ async function handleGenerate(supabase: any, params: any) {
   const ownerEmail = params.owner_email ?? null;
   const buyerName = params.buyer_name ?? null;
   const sendEmail = params.send_email === true && ownerEmail !== null;
+  const isTrial = params.is_trial === true;
   const product = params.product ?? "nusa-kasir";
 
   const keys: { key: string; serial: string }[] = [];
@@ -172,14 +173,20 @@ async function handleGenerate(supabase: any, params: any) {
     }
   }
 
+  // Calculate trial expiry (30 days from now)
+  const trialExpires = isTrial
+    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
   // Insert all into licenses table
   const { error } = await supabase.from("licenses").insert(
     keys.map((k) => ({
       key: k.key,
       serial: k.serial,
       product,
-      status: "issued",
+      status: isTrial ? "Trial" : "Generated",
       owner_email: ownerEmail,
+      expires_at: trialExpires,
     }))
   );
 
@@ -196,7 +203,8 @@ async function handleGenerate(supabase: any, params: any) {
       await sendActivationEmail(
         ownerEmail,
         buyerName || "Pelanggan NUSA",
-        keys.map((k) => k.key)
+        keys.map((k) => k.key),
+        isTrial
       );
       emailSent = true;
     } catch (e) {
@@ -208,6 +216,8 @@ async function handleGenerate(supabase: any, params: any) {
     ok: true,
     count: keys.length,
     keys: keys.map((k) => k.key),
+    is_trial: isTrial,
+    expires_at: trialExpires,
     email_sent: emailSent,
     email_error: emailError,
   });
@@ -218,7 +228,8 @@ async function handleGenerate(supabase: any, params: any) {
 async function sendActivationEmail(
   toEmail: string,
   buyerName: string,
-  keys: string[]
+  keys: string[],
+  isTrial = false
 ): Promise<void> {
   const keyList = keys.map((k) => `<code style="background:#f3f4f6;padding:4px 8px;border-radius:6px;font-size:13px;font-family:monospace">${k}</code>`).join("<br>");
   const singleKey = keys.length === 1 ? keys[0] : "";
@@ -227,6 +238,27 @@ async function sendActivationEmail(
        <p style="margin:8px 0"><strong>3.</strong> Masukkan key aktivasi: <code style="background:#fde8ea;padding:3px 8px;border-radius:5px;font-size:14px;font-weight:600">${singleKey}</code></p>`
     : `<p style="margin:8px 0"><strong>2.</strong> Buka aplikasi &amp; login dengan akun Google Anda</p>
        <p style="margin:8px 0"><strong>3.</strong> Masukkan salah satu key aktivasi di bawah</p>`;
+
+  const subject = isTrial
+    ? `Trial NUSA Kasir 30 Hari — Key Aktivasi Anda`
+    : `Key Aktivasi NUSA Kasir — ${keys.length > 1 ? `${keys.length} Keys` : "Pesanan Anda"}`;
+      
+  const badge = isTrial
+    ? `<p style="color:#fde8ea;margin:6px 0 0;font-size:13px">⏳ Trial 30 Hari — Semua Fitur Terbuka</p>`
+    : `<p style="color:#fde8ea;margin:6px 0 0;font-size:13px">Aplikasi Kasir untuk Toko Kelontong</p>`;
+
+  const trialNotice = isTrial
+    ? `<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
+        <p style="margin:0;font-size:13px;color:#92400e">
+          ⏳ <strong>Trial 30 Hari</strong> — Key ini berlaku selama 30 hari sejak aktivasi pertama.<br>
+          Setelah masa trial habis, kamu bisa beli lisensi seumur hidup seharga <strong>Rp 199K</strong>.
+        </p>
+      </div>`
+    : `<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
+        <p style="margin:0;font-size:13px;color:#92400e">
+          💡 <strong>Tips:</strong> Satu lisensi bisa dipakai di beberapa perangkat selama menggunakan akun Google yang sama.
+        </p>
+      </div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="id">
@@ -240,7 +272,7 @@ async function sendActivationEmail(
   <tr>
     <td style="background:linear-gradient(135deg,#e63946,#c1121f);padding:32px 40px;text-align:center">
       <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px">NUSA Kasir</h1>
-      <p style="color:#fde8ea;margin:6px 0 0;font-size:13px">Aplikasi Kasir untuk Toko Kelontong</p>
+      ${badge}
     </td>
   </tr>
 
@@ -250,7 +282,7 @@ async function sendActivationEmail(
 
       <p style="font-size:16px;color:#1f2937;margin:0 0 8px">Halo <strong>${buyerName}</strong>, 👋</p>
       <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px">
-        Terima kasih sudah membeli <strong>NUSA Kasir</strong>! Berikut key aktivasi untuk aplikasi Anda:
+        ${isTrial ? `Terima kasih sudah mencoba <strong>NUSA Kasir</strong>! Berikut key aktivasi trial 30 hari:` : `Terima kasih sudah membeli <strong>NUSA Kasir</strong>! Berikut key aktivasi untuk aplikasi Anda:`}
       </p>
 
       <!-- Key box -->
@@ -268,19 +300,14 @@ async function sendActivationEmail(
         <p style="margin:8px 0;font-size:14px;color:#374151"><strong>4.</strong> Setup data toko &amp; mulai jualan! 🎉</p>
       </div>
 
-      <!-- Tips -->
-      <div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
-        <p style="margin:0;font-size:13px;color:#92400e">
-          💡 <strong>Tips:</strong> Satu lisensi bisa dipakai di beberapa perangkat selama menggunakan akun Google yang sama.
-        </p>
-      </div>
+      ${trialNotice}
 
       <!-- Footer -->
       <p style="font-size:12px;color:#9ca3af;line-height:1.6;margin:0">
         Jika ada pertanyaan, silakan hubungi kami di<br>
         <a href="mailto:support@halugoods.com" style="color:#e63946;text-decoration:none">support@halugoods.com</a>
         &nbsp;|&nbsp;
-        <a href="https://wa.me/6281234567890" style="color:#e63946;text-decoration:none">WhatsApp</a>
+        <a href="https://wa.me/628976280303" style="color:#e63946;text-decoration:none">WhatsApp</a>
       </p>
     </td>
   </tr>
@@ -309,7 +336,7 @@ async function sendActivationEmail(
     body: JSON.stringify({
       from: `NUSA Kasir <${RESEND_FROM_EMAIL}>`,
       to: [toEmail],
-      subject: `Key Aktivasi NUSA Kasir — ${keys.length > 1 ? `${keys.length} Keys` : "Pesanan Anda"}`,
+      subject,
       html,
     }),
   });
@@ -332,7 +359,7 @@ async function handleAdd(supabase: any, params: any) {
     key: String(key).toUpperCase(),
     serial: String(serial),
     product: product ?? "nusa-kasir",
-    status: "issued",
+    status: "Generated",
     owner_email: owner_email ?? null,
   });
 
@@ -435,12 +462,12 @@ async function handleRevoke(supabase: any, params: any) {
 
   const { error } = await supabase
     .from("licenses")
-    .update({ status: "revoked" })
+    .update({ status: "Cancelled" })
     .eq("id", license_id);
 
   if (error) return json({ error: error.message }, 500);
 
-  return json({ ok: true, message: "License revoked" });
+  return json({ ok: true, message: "License cancelled" });
 }
 
 // ─── Delete an unused license ────────────────────────────────────────
@@ -449,7 +476,7 @@ async function handleDelete(supabase: any, params: any) {
   const { license_id } = params;
   if (!license_id) return json({ error: "license_id required" }, 400);
 
-  // Only delete issued, unactivated licenses
+  // Only delete Generated, unactivated licenses
   const { data: lic } = await supabase
     .from("licenses")
     .select("status")
@@ -457,8 +484,8 @@ async function handleDelete(supabase: any, params: any) {
     .single();
 
   if (!lic) return json({ error: "License not found" }, 404);
-  if (lic.status !== "issued") {
-    return json({ error: "Hanya lisensi unused (issued) yang bisa dihapus" }, 400);
+  if (lic.status !== "Generated") {
+    return json({ error: "Hanya lisensi unused (Generated) yang bisa dihapus" }, 400);
   }
 
   // Also check no activations exist (belt and suspenders)
@@ -490,9 +517,12 @@ async function handleStats(supabase: any) {
 
   const stats: Record<string, number> = {
     total: (allLicenses ?? []).length,
-    issued: 0,
-    activated: 0,
-    revoked: 0,
+    Generated: 0,
+    Active: 0,
+    Cancelled: 0,
+    Trial: 0,
+    Expired: 0,
+    Suspended: 0,
     total_activations: 0,
   };
 
