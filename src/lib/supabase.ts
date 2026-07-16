@@ -79,6 +79,17 @@ export async function getStore(storeId: string): Promise<StoreSettings | null> {
   return data as StoreSettings | null;
 }
 
+export async function getStoreBySlug(slug: string): Promise<StoreSettings | null> {
+  const supabase = requireSupabase();
+  const { data } = await supabase
+    .from("store_settings")
+    .select("*")
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .single();
+  return data as StoreSettings | null;
+}
+
 export async function getProducts(
   storeId: string,
   category?: string

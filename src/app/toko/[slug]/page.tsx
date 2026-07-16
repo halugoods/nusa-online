@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  getStore,
+  getStoreBySlug,
   getProducts,
   submitOrder,
   formatRupiah,
@@ -14,11 +14,12 @@ import {
   cancelOrder,
   OnlineOrder,
 } from "@/lib/supabase";
+import ProductCard from "@/components/ProductCard";
 
 const CATEGORIES = ["Semua", "Makanan", "Minuman", "Sembako", "Lainnya"];
 
-export default function StorePage({ params }: { params: { storeId: string } }) {
-  const storeId = params.storeId;
+export default function StorePage({ params }: { params: { slug: string } }) {
+  const slug = params.slug;
 
   const [store, setStore] = useState<StoreSettings | null>(null);
   const [products, setProducts] = useState<OnlineProduct[]>([]);
@@ -43,13 +44,16 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
   const [ordersLoading, setOrdersLoading] = useState(false);
 
   useEffect(() => {
-    if (!storeId) return;
-    Promise.all([getStore(storeId), getProducts(storeId)]).then(([s, p]) => {
+    if (!slug) return;
+    getStoreBySlug(slug).then((s) => {
+      if (!s) { setLoading(false); return; }
       setStore(s);
-      setProducts(p ?? []);
-      setLoading(false);
+      getProducts(s.store_id).then((p) => {
+        setProducts(p ?? []);
+        setLoading(false);
+      });
     });
-  }, [storeId]);
+  }, [slug]);
 
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
   const subtotal = cart.reduce((s, i) => s + i.subtotal, 0);
@@ -86,7 +90,7 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
     if (cart.length === 0) return alert("Keranjang kosong");
     setSubmitting(true);
     try {
-      const invoice = await submitOrder(storeId, {
+      const invoice = await submitOrder(store!.store_id, {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         items: cart,
@@ -113,7 +117,7 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
     if (!orderPhone.trim()) return;
     setOrdersLoading(true);
     try {
-      const data = await getOrders(storeId, orderPhone.trim());
+      const data = await getOrders(store!.store_id, orderPhone.trim());
       setOrders(data ?? []);
     } catch {
       alert("Gagal memuat pesanan");
@@ -123,7 +127,7 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
 
   const handleCancelOrder = async (orderId: number) => {
     if (!confirm("Yakin batalkan pesanan ini?")) return;
-    const ok = await cancelOrder(storeId, orderId, orderPhone.trim());
+    const ok = await cancelOrder(store!.store_id, orderId, orderPhone.trim());
     alert(ok ? "Pesanan dibatalkan" : "Gagal membatalkan pesanan");
     if (ok) loadOrders();
   };
@@ -148,7 +152,9 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
         <div>
           <div className="text-6xl mb-4">🏪</div>
           <h1 className="text-xl font-bold text-gray-700">Toko Tidak Ditemukan</h1>
-          <p className="text-gray-400 mt-2 text-sm">Toko online ini belum diaktifkan atau tidak tersedia.</p>
+          <p className="text-gray-400 mt-2 text-sm">
+            Link <b>{slug}</b> tidak aktif atau belum tersedia.
+          </p>
         </div>
       </div>
     );
@@ -193,18 +199,11 @@ export default function StorePage({ params }: { params: { storeId: string } }) {
           ) : (
             <div className="grid grid-cols-2 gap-3">
               {filtered.map((product) => (
-                <div key={product.product_id} onClick={() => addToCart(product)}
-                  className="bg-white rounded-xl border border-gray-100 overflow-hidden active:scale-95 transition-transform cursor-pointer shadow-sm hover:shadow-md">
-                  <div className="h-28 bg-gray-100 flex items-center justify-center text-4xl">
-                    {product.image_url ? <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" /> : "📦"}
-                  </div>
-                  <div className="p-2.5">
-                    <h3 className="text-sm font-semibold leading-tight line-clamp-2">{product.name}</h3>
-                    <p className="text-primary font-bold text-sm mt-1">{formatRupiah(product.price)}</p>
-                    {product.stock <= 5 && product.stock > 0 && <p className="text-orange-500 text-xs mt-0.5">Sisa {product.stock}</p>}
-                    {product.stock <= 0 && <p className="text-red-400 text-xs mt-0.5">Habis</p>}
-                  </div>
-                </div>
+                <ProductCard
+                  key={product.product_id}
+                  product={product}
+                  onAddToCart={addToCart}
+                />
               ))}
             </div>
           )}
