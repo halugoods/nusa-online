@@ -13,6 +13,7 @@ import {
   getOrders,
   cancelOrder,
   OnlineOrder,
+  SubmitOrderResult,
 } from "@/lib/supabase";
 import ProductCard from "@/components/ProductCard";
 
@@ -56,6 +57,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [lastInvoice, setLastInvoice] = useState("");
+  const [lastWhatsappUrl, setLastWhatsappUrl] = useState("");
   const [successView, setSuccessView] = useState(false);
 
   // Favorites
@@ -127,7 +129,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
     if (cart.length === 0) return alert("Keranjang kosong");
     setSubmitting(true);
     try {
-      const invoice = await submitOrder(store!.store_id, {
+      const result = await submitOrder(store!.store_id, {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         items: cart,
@@ -141,11 +143,17 @@ export default function StorePage({ params }: { params: { slug: string } }) {
         branch: "Pusat",
         notes,
       });
-      setLastInvoice(invoice ?? "");
+      setLastInvoice(result?.invoice ?? "");
+      setLastWhatsappUrl(result?.whatsappUrl ?? "");
       clearCart();
       setCartOpen(false);
       setCheckoutView(false);
       setSuccessView(true);
+
+      // Auto-open WhatsApp notification to store owner
+      if (result?.whatsappUrl) {
+        window.open(result.whatsappUrl, "_blank");
+      }
     } catch (e: any) {
       alert("Gagal mengirim pesanan: " + (e.message ?? "Coba lagi nanti"));
     }

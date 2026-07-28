@@ -110,6 +110,11 @@ export async function getProducts(
   return (data as OnlineProduct[]) ?? [];
 }
 
+export interface SubmitOrderResult {
+  invoice: string;
+  whatsappUrl: string;
+}
+
 export async function submitOrder(
   storeId: string,
   order: {
@@ -126,13 +131,14 @@ export async function submitOrder(
     branch: string;
     notes: string;
   }
-): Promise<string | null> {
+): Promise<SubmitOrderResult | null> {
   const supabase = requireSupabase();
   const invoice = `ONL-${new Date()
     .toISOString()
     .replace(/[-:T]/g, "")
     .slice(2, 14)}`;
 
+  // 1. Insert order
   const { error } = await supabase.from("online_orders").insert({
     store_id: storeId,
     invoice,
@@ -152,7 +158,81 @@ export async function submitOrder(
   });
 
   if (error) throw new Error(error.message);
-  return invoice;
+
+  // 2. Auto-register customer (upsert by phone)
+  if (order.customerName && order.customerPhone) {
+    try {
+      // Check if customer already exists by phone
+      const { data: existing } = await supabase
+        .from("customers")
+        .select("id, total_spent, points")
+        .eq("store_id", storeId)
+        .eq("phone", order.customerPhone)
+        .single();
+
+      const newTotal = (existing?.total_spent ?? 0) + order.total;
+      const newPoints = Math.floor(newTotal / 10000); // 1 poin per Rp 10.000
+      let level = "Silver";
+      if (newPoints >= 5000) level = "Platinum";
+      else if (newPoints >= 1000) level = "Gold";
+
+      if (existing) {
+        await supabase
+          .from("customers")
+          .update({
+            name: order.customerName,
+            total_spent: newTotal,
+            points: newPoints,
+            level,
+          })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("customers").insert({
+          store_id: storeId,
+          name: order.customerName,
+          phone: order.customerPhone,
+          total_spent: order.total,
+          points: Math.floor(order.total / 10000),
+          level: "Silver",
+        });
+      }
+    } catch (e) {
+      // Customer registration is non-blocking — order already saved
+      console.warn("[submitOrder] customer auto-register failed:", e);
+    }
+  }
+
+  // 3. Build WhatsApp notification URL
+  const { data: store } = await supabase
+    .from("store_settings")
+    .select("store_name, whatsapp")
+    .eq("store_id", storeId)
+    .single();
+
+  const storeWhatsapp = store?.whatsapp || order.customerPhone;
+  const storeName = store?.store_name || "Toko";
+
+  const itemsText = order.items
+    .map((i) => `• ${i.name} x${i.qty} — ${formatRupiah(i.subtotal)}`)
+    .join("\n");
+
+  const waMessage = encodeURIComponent(
+    `🛒 *Pesanan Baru — ${storeName}*\n\n` +
+    `📋 *${invoice}*\n` +
+    `👤 ${order.customerName}\n` +
+    `📱 ${order.customerPhone}\n` +
+    `🏪 ${order.branch}\n` +
+    `💳 ${order.paymentMethod}\n` +
+    `🕐 ${order.pickupTime}\n\n` +
+    `*Item:*\n${itemsText}\n\n` +
+    `💰 *Total: ${formatRupiah(order.total)}*\n\n` +
+    `_Catatan: ${order.notes || "-"}_`
+  );
+
+  return {
+    invoice,
+    whatsappUrl: `https://wa.me/${storeWhatsapp.replace(/\D/g, "")}?text=${waMessage}`,
+  };
 }
 
 export async function getOrders(
