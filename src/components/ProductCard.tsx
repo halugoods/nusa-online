@@ -43,10 +43,24 @@ export default function ProductCard({
     >
       {/* ── Image area ── */}
       <div className="relative aspect-square rounded-sm overflow-hidden">
-        {/* Gradient placeholder with initials */}
+        {/* Real product image, fallback to gradient placeholder */}
+        {product.image_url ? (
+          <img
+            src={product.image_url}
+            alt={product.name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+            onError={(e) => {
+              // Hide broken image, show gradient fallback
+              (e.target as HTMLImageElement).style.display = "none";
+              const fallback = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
+              if (fallback) fallback.style.display = "flex";
+            }}
+          />
+        ) : null}
         <div
-          className="w-full h-full flex items-center justify-center"
-          style={{ background: `linear-gradient(135deg, ${grad[0]}, ${grad[1]})` }}
+          className="w-full h-full items-center justify-center"
+          style={{ display: product.image_url ? "none" : "flex", background: `linear-gradient(135deg, ${grad[0]}, ${grad[1]})` }}
         >
           <span className="text-[28px] font-extrabold text-white tracking-wider select-none">
             {initials(product.name)}
