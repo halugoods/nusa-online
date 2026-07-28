@@ -8,10 +8,8 @@ export const metadata: Metadata = {
   keywords: ["kasir", "aplikasi kasir", "POS", "toko kelontong", "UMKM", "Indonesia", "NUSA"],
   openGraph: {
     title: "NUSA Kasir — Aplikasi Kasir untuk Toko Kelontong",
-    description:
-      "Aplikasi Point of Sale modern untuk toko kelontong & UMKM Indonesia. Lisensi seumur hidup Rp 150K.",
-    type: "website",
-    locale: "id_ID",
+    description: "Aplikasi Point of Sale modern untuk toko kelontong & UMKM Indonesia. Lisensi seumur hidup Rp 150K.",
+    type: "website", locale: "id_ID",
   },
 };
 
@@ -19,10 +17,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="id">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       </head>
-      <body className="bg-gray-50 text-gray-900 min-h-screen">{children}</body>
+      <body className="bg-background text-text-primary min-h-screen">{children}</body>
     </html>
   );
 }

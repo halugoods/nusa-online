@@ -5,116 +5,128 @@ import { OnlineProduct, formatRupiah } from "@/lib/supabase";
 interface ProductCardProps {
   product: OnlineProduct;
   onAddToCart: (product: OnlineProduct) => void;
+  cartQty?: number;
+  onDecrement?: (productId: number) => void;
+  onIncrement?: (productId: number) => void;
   isFav?: boolean;
   onToggleFav?: (productId: number) => void;
 }
 
-const categoryGradients: Record<string, { bg: string; icon: string }> = {
-  Makanan: { bg: "from-amber-100 via-orange-50 to-yellow-50", icon: "🍜" },
-  Minuman: { bg: "from-blue-100 via-sky-50 to-cyan-50", icon: "🥤" },
-  Sembako: { bg: "from-red-100 via-rose-50 to-pink-50", icon: "🧂" },
-  Lainnya: { bg: "from-purple-100 via-violet-50 to-fuchsia-50", icon: "📦" },
+const CAT_GRAD: Record<string, [string, string]> = {
+  Makanan: ["#FEF3C7", "#FDE68A"],
+  Minuman: ["#DBEAFE", "#BFDBFE"],
+  Sembako: ["#FEE2E2", "#FECACA"],
+  Lainnya: ["#F3E8FF", "#E9D5FF"],
 };
 
-export default function ProductCard({ product, onAddToCart, isFav = false, onToggleFav }: ProductCardProps) {
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.length >= 2 ? name.substring(0, 2).toUpperCase() : "??";
+}
+
+export default function ProductCard({
+  product, onAddToCart, cartQty = 0,
+  onDecrement, onIncrement,
+  isFav = false, onToggleFav,
+}: ProductCardProps) {
   const outOfStock = product.stock <= 0;
-  const lowStock = product.stock > 0 && product.stock <= 5;
-  const cat = categoryGradients[product.category] ?? categoryGradients.Lainnya;
+  const lowStock = !outOfStock && product.stock <= 5;
+  const grad = CAT_GRAD[product.category] ?? CAT_GRAD.Lainnya;
+  const hasQty = cartQty > 0;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-200 group active:scale-[0.98]">
-      {/* ── Image Area ── */}
-      <div className="relative aspect-square bg-gradient-to-br from-gray-50 to-gray-100 overflow-hidden">
-        {product.image_url ? (
-          <img
-            src={product.image_url}
-            alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-        ) : (
-          <div className={`w-full h-full bg-gradient-to-br ${cat.bg} flex items-center justify-center`}>
-            <span className="text-5xl opacity-50">{cat.icon}</span>
-          </div>
-        )}
-
-        {/* Overlay for out-of-stock */}
-        {outOfStock && (
-          <div className="absolute inset-0 bg-white/60 flex items-center justify-center">
-            <span className="bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">
-              Habis
-            </span>
-          </div>
-        )}
-
-        {/* Stock badge – top left */}
-        {!outOfStock && (
-          <div className="absolute top-2 left-2">
-            {lowStock ? (
-              <span className="inline-block px-2.5 py-1 bg-amber-100 text-amber-700 text-[11px] font-bold rounded-full shadow-sm backdrop-blur-sm">
-                Sisa {product.stock}
-              </span>
-            ) : (
-              <span className="inline-block px-2.5 py-1 bg-white/90 text-primary text-[11px] font-bold rounded-full shadow-sm backdrop-blur-sm">
-                Ada {product.stock}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Favorite button – top right */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFav?.(product.product_id);
-          }}
-          className="absolute top-2 right-2 w-8 h-8 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center border-0 shadow-sm hover:bg-white transition-all active:scale-90"
+    <div
+      onClick={() => { if (!outOfStock && cartQty === 0) onAddToCart(product); }}
+      className="group bg-surface rounded-lg border border-divider p-[10px] flex flex-col cursor-pointer active:scale-[0.98] transition-transform"
+      style={{ boxShadow: "0 3px 10px rgba(0,0,0,.08)" }}
+    >
+      {/* ── Image area ── */}
+      <div className="relative aspect-square rounded-sm overflow-hidden">
+        {/* Gradient placeholder with initials */}
+        <div
+          className="w-full h-full flex items-center justify-center"
+          style={{ background: `linear-gradient(135deg, ${grad[0]}, ${grad[1]})` }}
         >
-          <svg
-            viewBox="0 0 24 24"
-            className={`w-4 h-4 transition-all duration-200 ${
-              isFav ? "fill-primary scale-110" : "fill-gray-300 hover:fill-gray-400"
-            }`}
-          >
-            <path d="M12 20a1 1 0 0 1-.437-.1C11.214 19.73 3 15.671 3 9a5 5 0 0 1 8.535-3.536l.465.465.465-.465A5 5 0 0 1 21 9c0 6.646-8.212 10.728-8.562 10.9A1 1 0 0 1 12 20z" />
-          </svg>
-        </button>
-
-        {/* Price badge – bottom */}
-        <div className="absolute bottom-2 left-2 right-2">
-          <span className="inline-block bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full text-primary font-bold text-xs shadow-md">
-            {formatRupiah(product.price)}
+          <span className="text-[28px] font-extrabold text-white tracking-wider select-none">
+            {initials(product.name)}
           </span>
         </div>
-      </div>
 
-      {/* ── Info ── */}
-      <div className="p-3">
-        {/* Category label */}
-        <span className="text-[10px] font-semibold text-primary/60 uppercase tracking-wide">
-          {product.category}
+        {/* Stock badge — top left (exact Flutter style) */}
+        <span
+          className="absolute top-[6px] left-[6px] px-[7px] py-[3px] rounded-full text-[10px] font-bold z-[2]"
+          style={{
+            background: outOfStock ? "#FEE2E2" : lowStock ? "#FEF3C7" : "rgba(255,255,255,.92)",
+            color: outOfStock ? "#DC2626" : lowStock ? "#D97706" : "#E40000",
+          }}
+        >
+          {outOfStock ? "Habis" : `${product.stock}x`}
         </span>
 
-        {/* Product name */}
-        <h3 className="text-sm font-bold text-gray-800 leading-snug line-clamp-2 mt-1 mb-3">
-          {product.name}
-        </h3>
+        {/* Out of stock overlay */}
+        {outOfStock && <div className="absolute inset-0 bg-white/40" />}
 
-        {/* ── Action Button ── */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            if (outOfStock) return;
-            onAddToCart(product);
-          }}
-          disabled={outOfStock}
-          className={`w-full py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 ${
-            outOfStock
-              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-              : "bg-primary text-white hover:bg-primary-dark shadow-sm shadow-primary/20"
-          }`}
-        >
-          {outOfStock ? "Stok Habis" : "+ Keranjang"}
-        </button>
+        {/* Wishlist button — top right */}
+        {onToggleFav && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleFav(product.product_id); }}
+            className="absolute top-[6px] right-[6px] w-[30px] h-[30px] rounded-full flex items-center justify-center cursor-pointer z-[2]"
+            style={{ background: isFav ? "#E40000" : "rgba(0,0,0,.25)" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill={isFav ? "#fff" : "none"} stroke="#fff" strokeWidth="2">
+              <path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* ── Name ── */}
+      <p
+        className={`mt-2 text-[13px] font-bold leading-[1.25] line-clamp-2 ${outOfStock ? "text-text-tertiary" : "text-text-primary"}`}
+      >
+        {product.name}
+      </p>
+
+      {/* ── Category ── */}
+      <p className="text-[11px] text-text-tertiary mt-0.5">{product.category}</p>
+
+      {/* ── Price ── */}
+      <p className="mt-1.5 text-[14px] font-extrabold text-primary">{formatRupiah(product.price)}</p>
+
+      {/* ── Action ── */}
+      <div className="mt-2">
+        {outOfStock ? (
+          <div className="w-full h-9 rounded-[10px] bg-input-fill flex items-center justify-center text-xs font-bold text-text-tertiary">
+            Stok Habis
+          </div>
+        ) : hasQty && onDecrement && onIncrement ? (
+          /* NusaQtyStepper */
+          <div className="flex items-center w-full h-9 rounded-[10px] bg-primary-soft border-[1.2px] border-primary/50 overflow-hidden">
+            <button
+              onClick={(e) => { e.stopPropagation(); onDecrement(product.product_id); }}
+              className="w-9 h-9 flex items-center justify-center text-primary hover:bg-primary/10 rounded-[10px] transition-colors"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14" /></svg>
+            </button>
+            <span className="flex-1 text-center text-[14px] font-extrabold text-primary">{cartQty}</span>
+            <button
+              onClick={(e) => { e.stopPropagation(); onIncrement(product.product_id); }}
+              className="w-9 h-9 flex items-center justify-center text-primary hover:bg-primary/10 rounded-[10px] transition-colors"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
+            </button>
+          </div>
+        ) : (
+          /* NusaAddButton */
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddToCart(product); }}
+            className="w-full h-9 rounded-[10px] bg-primary text-white flex items-center justify-center gap-1 text-[13.5px] font-bold active:opacity-85 active:scale-[0.97] transition-all"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
+            Tambah
+          </button>
+        )}
       </div>
     </div>
   );
