@@ -1,13 +1,14 @@
 "use client";
 
-const EDGE_FUNCTION_URL = "https://sakeuhcbcnueplzlkltm.supabase.co/functions/v1/license-manager";
+const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/license-manager`;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export interface LicenseRecord {
   id: string;
   key: string;
   serial: string;
   product: string;
-  status: "issued" | "activated" | "revoked";
+  status: "Generated" | "Trial" | "Active" | "Cancelled" | "Expired" | "Suspended";
   owner_email: string | null;
   google_user_id?: string | null;
   activation_count: number;
@@ -28,9 +29,12 @@ export interface LicenseDetail extends LicenseRecord {
 
 export interface LicenseStats {
   total: number;
-  issued: number;
-  activated: number;
-  revoked: number;
+  Generated: number;
+  Trial: number;
+  Active: number;
+  Cancelled: number;
+  Expired: number;
+  Suspended: number;
   total_activations: number;
 }
 
@@ -76,6 +80,8 @@ async function call(action: string, params: Record<string, unknown> = {}): Promi
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       "x-admin-key": adminKey,
     },
     body: JSON.stringify({ action, ...params }),
@@ -93,6 +99,8 @@ export async function verifyAdminKey(key: string): Promise<boolean> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
         "x-admin-key": key,
       },
       body: JSON.stringify({ action: "stats" }),
@@ -128,13 +136,15 @@ export async function generateKeys(
   count: number,
   ownerEmail?: string,
   buyerName?: string,
-  sendEmail?: boolean
-): Promise<{ ok: boolean; count: number; keys: string[]; email_sent?: boolean; email_error?: string }> {
+  sendEmail?: boolean,
+  isTrial?: boolean
+): Promise<{ ok: boolean; count: number; keys: string[]; is_trial?: boolean; expires_at?: string; email_sent?: boolean; email_error?: string }> {
   return call("generate", {
     count,
     owner_email: ownerEmail ?? null,
     buyer_name: buyerName ?? null,
     send_email: sendEmail ?? false,
+    is_trial: isTrial ?? false,
   });
 }
 

@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 
-const WHATSAPP_NUMBER = "6281234567890"; // GANTI dengan nomor WhatsApp kamu
-const WHATSAPP_MESSAGE = encodeURIComponent(
-  "Halo, saya tertarik dengan NUSA Kasir. Bisa info lebih lanjut?"
-);
+const WHATSAPP_NUMBER = "628976280303";
+const WHATSAPP_TRIAL_MSG = "Halo, saya mau coba trial gratis NUSA Kasir 1 bulan.";
+const WHATSAPP_BUY_MSG = "Halo, saya mau beli NUSA Kasir. Bisa info pembayaran?";
 
 const features = [
   {
@@ -37,7 +36,11 @@ const faqs = [
   },
   {
     q: "Berapa harganya?",
-    a: "Rp 150.000 untuk lisensi seumur hidup. Satu kali bayar, bisa dipakai di beberapa perangkat dengan akun Google yang sama.",
+    a: "Rp 199.000 untuk lisensi seumur hidup (harga normal Rp 499K — hemat 60%). Satu kali bayar, bisa dipakai di beberapa perangkat dengan akun Google yang sama. Tersedia juga trial gratis 30 hari — semua fitur, tanpa kartu kredit.",
+  },
+  {
+    q: "Ada trial gratisnya?",
+    a: "Ada! Coba gratis 30 hari full fitur. Kalau cocok, tinggal beli lisensi seumur hidup. Kalau gak cocok, gak perlu bayar apa-apa. Isi nomor WA di kartu Trial supaya kami bisa follow-up sebelum masa trial habis.",
   },
   {
     q: "Apakah butuh internet?",
@@ -49,7 +52,7 @@ const faqs = [
   },
   {
     q: "Bagaimana cara dapat key aktivasi?",
-    a: "Key aktivasi didapatkan setelah pembelian. Klik tombol Beli Sekarang di atas untuk langsung terhubung via WhatsApp dengan kami.",
+    a: "Key aktivasi didapatkan setelah pembelian. Klik tombol Beli Sekarang atau Coba Gratis di atas untuk langsung terhubung via WhatsApp dengan kami.",
   },
 ];
 
@@ -68,7 +71,7 @@ export default function Landing() {
             <span className="font-extrabold text-gray-900 text-lg">NUSA</span>
           </div>
           <a
-            href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`}
+            href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_BUY_MSG)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors"
@@ -101,7 +104,7 @@ export default function Landing() {
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
               <a
-                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_BUY_MSG)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-bold px-8 py-3.5 rounded-2xl shadow-lg shadow-primary/30 active:scale-[0.98] transition-all text-base"
@@ -124,6 +127,7 @@ export default function Landing() {
 
             {/* Trust indicators */}
             <div className="flex items-center justify-center gap-6 mt-10 text-xs text-gray-400">
+              <span>✓ Trial 30 Hari Gratis</span>
               <span>✓ Lisensi Seumur Hidup</span>
               <span>✓ Support WhatsApp</span>
               <span>✓ Update Gratis</span>
@@ -165,37 +169,104 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto px-4">
           <div className="text-center mb-10">
             <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3">
-              Harga Sederhana, Satu Kali Bayar
+              Pilih Paket yang Pas Buat Kamu
             </h2>
             <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base">
-              Tidak ada biaya bulanan. Tidak ada biaya tersembunyi. Bayar sekali,
-              pakai selamanya.
+              Mulai gratis dulu, baru beli kalau cocok. Gak ada biaya tersembunyi.
             </p>
           </div>
 
-          <div className="max-w-sm mx-auto">
-            <div className="relative bg-white rounded-3xl border-2 border-primary p-8 text-center shadow-xl shadow-primary/10">
-              {/* Popular badge */}
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-white text-xs font-bold px-4 py-1 rounded-full">
-                PALING POPULER
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+            {/* ── Trial Card ── */}
+            <div className="relative bg-white rounded-3xl border-2 border-dashed border-amber-300 p-8 text-center shadow-lg hover:shadow-xl transition-shadow">
+              {/* Badge */}
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-white text-xs font-bold px-4 py-1 rounded-full">
+                COBA DULU
               </div>
 
-              <div className="mt-2 mb-6">
-                <span className="text-4xl font-extrabold text-gray-900">Rp 150K</span>
+              <div className="mt-2 mb-4">
+                <span className="text-4xl font-extrabold text-gray-900">Rp 0</span>
+                <span className="text-gray-400 text-sm ml-1">/30 hari</span>
+              </div>
+
+              <p className="text-xs text-gray-500 mb-6">
+                Trial penuh, semua fitur. Tanpa kartu kredit.
+              </p>
+
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600 text-left">
+                {[
+                  "Semua fitur Pro tanpa batasan",
+                  "Toko online gratis",
+                  "Backup & restore cloud",
+                  "Support via WhatsApp",
+                  "1 akun Google, multi perangkat",
+                ].map((item, i) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <svg className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              {/* WA number input */}
+              <div className="mb-4">
+                <input
+                  type="tel"
+                  placeholder="Nomor WhatsApp kamu..."
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm text-center focus:ring-2 focus:ring-amber-300 focus:border-amber-400 outline-none"
+                  id="trial-wa-input"
+                />
+                <p className="text-xs text-gray-400 mt-1.5">
+                  Kami akan follow-up sebelum trial habis ✨
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  const waInput = (document.getElementById("trial-wa-input") as HTMLInputElement)?.value?.trim() || "";
+                  const msg = waInput
+                    ? `${encodeURIComponent(WHATSAPP_TRIAL_MSG)} Nomor WA: ${encodeURIComponent(waInput)}`
+                    : encodeURIComponent(WHATSAPP_TRIAL_MSG);
+                  window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`, "_blank", "noopener,noreferrer");
+                }}
+                className="block w-full bg-amber-400 hover:bg-amber-500 text-white font-bold py-3 rounded-2xl shadow-lg shadow-amber-400/20 active:scale-[0.98] transition-all"
+              >
+                Coba Gratis via WhatsApp
+              </button>
+            </div>
+
+            {/* ── Full License Card ── */}
+            <div className="relative bg-white rounded-3xl border-2 border-primary p-8 text-center shadow-xl shadow-primary/10">
+              {/* Badge */}
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-red-500 text-white text-xs font-bold px-4 py-1 rounded-full">
+                HEMAT 60%
+              </div>
+
+              <div className="mt-2 mb-2">
+                <span className="text-4xl font-extrabold text-gray-900">Rp 199K</span>
                 <span className="text-gray-400 text-sm ml-1">/lisensi</span>
               </div>
 
-              <ul className="space-y-3 mb-8 text-sm text-gray-600 text-left">
+              <p className="mb-1">
+                <span className="text-gray-400 line-through text-sm">Rp 499K</span>
+              </p>
+              <p className="text-xs text-gray-500 mb-6">
+                Lisensi seumur hidup. Bayar sekali, pakai selamanya.
+              </p>
+
+              <ul className="space-y-2.5 mb-6 text-sm text-gray-600 text-left">
                 {[
-                  "1 lisensi = beberapa perangkat (1 akun Google)",
                   "Semua fitur tanpa batasan",
-                  "Toko online gratis (nusa-online.vercel.app)",
+                  "Toko online gratis",
                   "Backup & restore cloud",
                   "Support prioritas via WhatsApp",
+                  "1 lisensi, multi perangkat (1 akun Google)",
                   "Update aplikasi gratis selamanya",
                 ].map((item, i) => (
                   <li key={i} className="flex items-start gap-2">
-                    <svg className="w-5 h-5 text-accent-green shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <svg className="w-4 h-4 text-accent-green shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                     {item}
@@ -204,10 +275,10 @@ export default function Landing() {
               </ul>
 
               <a
-                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_BUY_MSG)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block bg-primary hover:bg-primary-dark text-white font-bold py-3.5 rounded-2xl shadow-lg shadow-primary/30 active:scale-[0.98] transition-all"
+                className="block bg-primary hover:bg-primary-dark text-white font-bold py-3 rounded-2xl shadow-lg shadow-primary/30 active:scale-[0.98] transition-all"
               >
                 Beli Sekarang via WhatsApp
               </a>
@@ -331,7 +402,7 @@ export default function Landing() {
             hitungan menit.
           </p>
           <a
-            href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`}
+            href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_BUY_MSG)}`}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 bg-white hover:bg-gray-50 text-primary font-bold px-8 py-3.5 rounded-2xl shadow-lg active:scale-[0.98] transition-all"
@@ -362,7 +433,7 @@ export default function Landing() {
 
             <div className="flex items-center gap-4 text-xs text-gray-500">
               <a
-                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${WHATSAPP_MESSAGE}`}
+                href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(WHATSAPP_BUY_MSG)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-white transition-colors"

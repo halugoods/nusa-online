@@ -36,12 +36,18 @@ function formatDate(iso: string): string {
 
 function statusBadge(status: string): { bg: string; text: string; label: string } {
   switch (status) {
-    case "issued":
-      return { bg: "bg-blue-50 text-blue-700 border-blue-200", text: "text-blue-700", label: "Issued" };
-    case "activated":
+    case "Generated":
+      return { bg: "bg-blue-50 text-blue-700 border-blue-200", text: "text-blue-700", label: "Generated" };
+    case "Trial":
+      return { bg: "bg-amber-50 text-amber-700 border-amber-200", text: "text-amber-700", label: "Trial" };
+    case "Active":
       return { bg: "bg-green-50 text-green-700 border-green-200", text: "text-green-700", label: "Aktif" };
-    case "revoked":
-      return { bg: "bg-red-50 text-red-700 border-red-200", text: "text-red-700", label: "Revoked" };
+    case "Cancelled":
+      return { bg: "bg-red-50 text-red-700 border-red-200", text: "text-red-700", label: "Cancelled" };
+    case "Expired":
+      return { bg: "bg-gray-50 text-gray-500 border-gray-200", text: "text-gray-500", label: "Expired" };
+    case "Suspended":
+      return { bg: "bg-orange-50 text-orange-700 border-orange-200", text: "text-orange-700", label: "Suspended" };
     default:
       return { bg: "bg-gray-50 text-gray-700 border-gray-200", text: "text-gray-700", label: status };
   }
@@ -205,16 +211,19 @@ function OverviewTab() {
 
   const cards = [
     { label: "Total Lisensi", value: stats.total, color: "bg-blue-50 text-blue-700" },
-    { label: "Issued (Belum Aktif)", value: stats.issued ?? 0, color: "bg-amber-50 text-amber-700" },
-    { label: "Aktif", value: stats.activated ?? 0, color: "bg-green-50 text-green-700" },
-    { label: "Revoked", value: stats.revoked ?? 0, color: "bg-red-50 text-red-700" },
+    { label: "Generated (Belum Aktif)", value: stats.Generated ?? 0, color: "bg-amber-50 text-amber-700" },
+    { label: "Trial", value: stats.Trial ?? 0, color: "bg-yellow-50 text-yellow-700" },
+    { label: "Aktif", value: stats.Active ?? 0, color: "bg-green-50 text-green-700" },
+    { label: "Cancelled", value: stats.Cancelled ?? 0, color: "bg-red-50 text-red-700" },
+    { label: "Expired", value: stats.Expired ?? 0, color: "bg-gray-50 text-gray-600" },
+    { label: "Suspended", value: stats.Suspended ?? 0, color: "bg-orange-50 text-orange-700" },
     { label: "Total Aktivasi", value: stats.total_activations ?? 0, color: "bg-purple-50 text-purple-700" },
   ];
 
   return (
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-4">Overview Lisensi</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {cards.map((c) => (
           <div key={c.label} className={`rounded-xl p-4 ${c.color}`}>
             <p className="text-2xl font-bold">{c.value}</p>
@@ -312,9 +321,12 @@ function LicensesTab() {
           className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
         >
           <option value="">Semua Status</option>
-          <option value="issued">Issued</option>
-          <option value="activated">Aktif</option>
-          <option value="revoked">Revoked</option>
+          <option value="Generated">Generated</option>
+          <option value="Trial">Trial</option>
+          <option value="Active">Aktif</option>
+          <option value="Cancelled">Cancelled</option>
+          <option value="Expired">Expired</option>
+          <option value="Suspended">Suspended</option>
         </select>
         <form
           onSubmit={(e) => { e.preventDefault(); setSearch(searchInput); setPage(0); }}
@@ -400,15 +412,15 @@ function LicensesTab() {
                             >
                               Detail
                             </button>
-                            {lic.status !== "revoked" && (
+                            {lic.status !== "Cancelled" && lic.status !== "Expired" && lic.status !== "Suspended" && (
                               <button
                                 onClick={() => handleRevoke(lic.id)}
                                 className="px-2 py-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
                               >
-                                Revoke
+                                Cancel
                               </button>
                             )}
-                            {lic.status === "issued" && (lic.activation_count ?? 0) === 0 && (
+                            {lic.status === "Generated" && (lic.activation_count ?? 0) === 0 && (
                               <button
                                 onClick={() => handleDelete(lic.id)}
                                 className="px-2 py-1 text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -564,8 +576,9 @@ function GenerateTab() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [sendEmail, setSendEmail] = useState(false);
+  const [isTrial, setIsTrial] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ count: number; keys: string[]; email_sent?: boolean; email_error?: string } | null>(null);
+  const [result, setResult] = useState<{ count: number; keys: string[]; is_trial?: boolean; expires_at?: string; email_sent?: boolean; email_error?: string } | null>(null);
   const [error, setError] = useState("");
   const [copiedAll, setCopiedAll] = useState(false);
 
@@ -582,7 +595,7 @@ function GenerateTab() {
     setError("");
     setResult(null);
     try {
-      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail);
+      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail, isTrial);
       setResult(res);
     } catch (e: any) {
       setError(e.message);
@@ -668,6 +681,19 @@ function GenerateTab() {
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
+                  checked={isTrial}
+                  onChange={(e) => setIsTrial(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-300/20 accent-amber-500"
+                />
+                <span className="text-sm text-gray-700 font-medium">
+                  ⏳ Trial 30 Hari
+                </span>
+              </label>
+            </div>
+            <div className="flex items-end pb-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
                   checked={sendEmail}
                   onChange={(e) => setSendEmail(e.target.checked)}
                   disabled={!ownerEmail}
@@ -697,7 +723,12 @@ function GenerateTab() {
           <div className="mt-4 bg-white rounded-xl border border-green-200 p-5">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium text-green-700">
-                ✅ {result.count} key berhasil di-generate
+                ✅ {result.count} key {result.is_trial ? "trial" : ""} berhasil di-generate
+                {result.is_trial && result.expires_at && (
+                  <span className="block text-xs text-amber-600 mt-0.5">
+                    ⏳ Expires: {new Date(result.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                  </span>
+                )}
               </p>
               <button
                 onClick={copyAllKeys}
