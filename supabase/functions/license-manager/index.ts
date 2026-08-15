@@ -1,5 +1,5 @@
 // ============================================================================
-// NUSA KASIR — License Manager Edge Function
+// NUSA — License Manager Edge Function (v2 — Multi-App + Tier)
 // Deploy: supabase functions deploy license-manager --project-ref sakeuhcbcnueplzlkltm
 // ============================================================================
 // Admin operations for activation key management:
@@ -160,6 +160,7 @@ async function handleGenerate(supabase: any, params: any) {
   const buyerName = params.buyer_name ?? null;
   const sendEmail = params.send_email === true && ownerEmail !== null;
   const isTrial = params.is_trial === true;
+  const tier = params.tier ?? (isTrial ? 'trial' : 'lifetime');
   const product = params.product ?? "nusa-kasir";
 
   const keys: { key: string; serial: string }[] = [];
@@ -173,10 +174,14 @@ async function handleGenerate(supabase: any, params: any) {
     }
   }
 
-  // Calculate trial expiry (30 days from now)
-  const trialExpires = isTrial
-    ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-    : null;
+  // Calculate expiry based on tier
+  let trialExpires: string | null = null;
+  if (tier === 'trial') {
+    trialExpires = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(); // 3 hari
+  } else if (tier === '1month') {
+    trialExpires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 1 bulan
+  }
+  // lifetime: expires_at stays null
 
   // Insert all into licenses table
   const { error } = await supabase.from("licenses").insert(
@@ -184,7 +189,8 @@ async function handleGenerate(supabase: any, params: any) {
       key: k.key,
       serial: k.serial,
       product,
-      status: isTrial ? "Trial" : "Generated",
+      tier,
+      status: tier === 'trial' ? "Trial" : "Generated",
       owner_email: ownerEmail,
       expires_at: trialExpires,
     }))
@@ -204,7 +210,8 @@ async function handleGenerate(supabase: any, params: any) {
         ownerEmail,
         buyerName || "Pelanggan NUSA",
         keys.map((k) => k.key),
-        isTrial
+        tier,
+        product
       );
       emailSent = true;
     } catch (e) {
@@ -216,7 +223,8 @@ async function handleGenerate(supabase: any, params: any) {
     ok: true,
     count: keys.length,
     keys: keys.map((k) => k.key),
-    is_trial: isTrial,
+    tier,
+    product,
     expires_at: trialExpires,
     email_sent: emailSent,
     email_error: emailError,
@@ -229,7 +237,8 @@ async function sendActivationEmail(
   toEmail: string,
   buyerName: string,
   keys: string[],
-  isTrial = false
+  tier = 'lifetime',
+  product = 'nusa-kasir'
 ): Promise<void> {
   const keyList = keys.map((k) => `<code style="background:#f3f4f6;padding:4px 8px;border-radius:6px;font-size:13px;font-family:monospace">${k}</code>`).join("<br>");
   const singleKey = keys.length === 1 ? keys[0] : "";
@@ -239,19 +248,42 @@ async function sendActivationEmail(
     : `<p style="margin:8px 0"><strong>2.</strong> Buka aplikasi &amp; login dengan akun Google Anda</p>
        <p style="margin:8px 0"><strong>3.</strong> Masukkan salah satu key aktivasi di bawah</p>`;
 
-  const subject = isTrial
-    ? `Trial NUSA Kasir 30 Hari — Key Aktivasi Anda`
-    : `Key Aktivasi NUSA Kasir — ${keys.length > 1 ? `${keys.length} Keys` : "Pesanan Anda"}`;
-      
-  const badge = isTrial
-    ? `<p style="color:#fde8ea;margin:6px 0 0;font-size:13px">⏳ Trial 30 Hari — Semua Fitur Terbuka</p>`
-    : `<p style="color:#fde8ea;margin:6px 0 0;font-size:13px">Aplikasi Kasir untuk Toko Kelontong</p>`;
+  const productNames: Record<string, string> = {
+    'nusa-kelontong': 'NUSA Kelontong',
+    'nusa-fnb': 'NUSA F&B',
+    'nusa-laundry': 'NUSA Laundry',
+    'nusa-bengkel': 'NUSA Bengkel',
+    'nusa-salon': 'NUSA Salon',
+    'nusa-apotek': 'NUSA Apotek',
+    'nusa-fotocopy': 'NUSA Fotocopy',
+    'nusa-servicehp': 'NUSA Service HP',
+    'nusa-kasir': 'NUSA Kasir',
+  };
+  const productName = productNames[product] ?? 'NUSA';
 
-  const trialNotice = isTrial
+  const tierLabel = tier === 'trial' ? 'Trial 3 Hari' : tier === '1month' ? '1 Bulan' : 'Lifetime';
+  const tierPrice = tier === 'trial' ? 'GRATIS' : tier === '1month' ? 'Rp 49K' : 'Rp 199K';
+
+  const subject = tier === 'trial'
+    ? `Trial ${productName} 3 Hari — Key Aktivasi Anda`
+    : tier === '1month'
+    ? `Lisensi ${productName} 1 Bulan — Key Aktivasi Anda`
+    : `Lisensi ${productName} Lifetime — Key Aktivasi Anda`;
+
+  const badge = `<p style="color:#fde8ea;margin:6px 0 0;font-size:13px">${tierLabel} — ${tierPrice}</p>`;
+
+  const trialNotice = tier === 'trial'
     ? `<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
         <p style="margin:0;font-size:13px;color:#92400e">
-          ⏳ <strong>Trial 30 Hari</strong> — Key ini berlaku selama 30 hari sejak aktivasi pertama.<br>
-          Setelah masa trial habis, kamu bisa beli lisensi seumur hidup seharga <strong>Rp 199K</strong>.
+          ⏳ <strong>Trial 3 Hari</strong> — Key ini berlaku selama 3 hari sejak aktivasi pertama.<br>
+          Setelah masa trial habis, kamu bisa beli lisensi seharga <strong>Rp 49K/bulan</strong> atau <strong>Rp 199K lifetime</strong>.
+        </p>
+      </div>`
+    : tier === '1month'
+    ? `<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
+        <p style="margin:0;font-size:13px;color:#92400e">
+          📅 <strong>Lisensi 1 Bulan</strong> — Berlaku 30 hari sejak aktivasi.<br>
+          Ingin selamanya? Upgrade ke <strong>Rp 199K lifetime</strong> kapan saja.
         </p>
       </div>`
     : `<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:24px">
@@ -271,7 +303,7 @@ async function sendActivationEmail(
   <!-- Header -->
   <tr>
     <td style="background:linear-gradient(135deg,#e63946,#c1121f);padding:32px 40px;text-align:center">
-      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px">NUSA Kasir</h1>
+      <h1 style="color:#fff;margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px">${productName}</h1>
       ${badge}
     </td>
   </tr>
@@ -282,7 +314,7 @@ async function sendActivationEmail(
 
       <p style="font-size:16px;color:#1f2937;margin:0 0 8px">Halo <strong>${buyerName}</strong>, 👋</p>
       <p style="font-size:14px;color:#6b7280;line-height:1.7;margin:0 0 24px">
-        ${isTrial ? `Terima kasih sudah mencoba <strong>NUSA Kasir</strong>! Berikut key aktivasi trial 30 hari:` : `Terima kasih sudah membeli <strong>NUSA Kasir</strong>! Berikut key aktivasi untuk aplikasi Anda:`}
+        ${tier === 'trial' ? `Terima kasih sudah mencoba <strong>${productName}</strong>! Berikut key aktivasi trial 3 hari:` : `Terima kasih sudah berlangganan <strong>${productName}</strong>! Berikut key aktivasi:`}
       </p>
 
       <!-- Key box -->
@@ -295,7 +327,7 @@ async function sendActivationEmail(
       <!-- Steps -->
       <h2 style="font-size:15px;color:#1f2937;margin:0 0 12px">📱 Langkah Aktivasi</h2>
       <div style="background:#f9fafb;border-radius:12px;padding:16px 20px;margin-bottom:24px">
-        <p style="margin:8px 0;font-size:14px;color:#374151"><strong>1.</strong> Download NUSA Kasir</p>
+        <p style="margin:8px 0;font-size:14px;color:#374151"><strong>1.</strong> Download ${productName} dari link yang diberikan</p>
         ${stepActivation}
         <p style="margin:8px 0;font-size:14px;color:#374151"><strong>4.</strong> Setup data toko &amp; mulai jualan! 🎉</p>
       </div>
@@ -380,6 +412,8 @@ async function handleList(supabase: any, params: any) {
   const limit = Math.min(params.limit ?? 50, 200);
   const status = params.status ?? null;
   const search = params.search ?? null;
+  const product = params.product ?? null;
+  const tier = params.tier ?? null;
   const from = page * limit;
   const to = from + limit - 1;
 
@@ -391,6 +425,8 @@ async function handleList(supabase: any, params: any) {
     .order("created_at", { ascending: false });
 
   if (status) licenseQuery = licenseQuery.eq("status", status);
+  if (product) licenseQuery = licenseQuery.eq("product", product);
+  if (tier) licenseQuery = licenseQuery.eq("tier", tier);
   if (search) licenseQuery = licenseQuery.or(`key.ilike.%${search}%,owner_email.ilike.%${search}%`);
 
   // Apply pagination via range — but we also need total count from a separate query

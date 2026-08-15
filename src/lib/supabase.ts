@@ -24,6 +24,13 @@ export interface StoreSettings {
   address: string;
   open_hours: string;
   is_active: boolean;
+  // Batch #9: slug + variant + tema (warna ikut aplikasi)
+  slug?: string;
+  variant?: string;
+  theme_id?: string;
+  primary_color?: string;
+  dark_color?: string;
+  soft_color?: string;
 }
 
 export interface OnlineProduct {
@@ -88,6 +95,58 @@ export async function getStoreBySlug(slug: string): Promise<StoreSettings | null
     .eq("is_active", true)
     .single();
   return data as StoreSettings | null;
+}
+
+// Batch #9: lookup storefront by variant + slug — /toko/{variant}/{slug}
+export async function getStoreByVariantSlug(
+  variant: string,
+  slug: string
+): Promise<StoreSettings | null> {
+  const supabase = requireSupabase();
+  const { data } = await supabase
+    .from("store_settings")
+    .select("*")
+    .eq("variant", variant)
+    .eq("slug", slug)
+    .eq("is_active", true)
+    .maybeSingle();
+  return data as StoreSettings | null;
+}
+
+// Fallback: slug lama (tanpa variant) tetap bisa diakses untuk kompatibilitas
+export async function getStoreByVariantSlugOrLegacy(
+  variant: string,
+  slug: string
+): Promise<StoreSettings | null> {
+  const store = await getStoreByVariantSlug(variant, slug);
+  if (store) return store;
+  const legacy = await getStoreBySlug(slug);
+  if (legacy && !legacy.variant) return legacy;
+  return null;
+}
+
+// ─── Theme colors from store (fallback per variant) ────────────────
+const VARIANT_THEMES: Record<string, { primary: string; dark: string; soft: string }> = {
+  "nusa-kelontong": { primary: "#F97316", dark: "#EA580C", soft: "#FFF7ED" },
+  "nusa-fnb": { primary: "#E11D48", dark: "#BE123C", soft: "#FFF1F2" },
+  "nusa-laundry": { primary: "#6366F1", dark: "#4F46E5", soft: "#EEF2FF" },
+  "nusa-bengkel": { primary: "#2563EB", dark: "#1D4ED8", soft: "#EFF6FF" },
+  "nusa-salon": { primary: "#EC4899", dark: "#DB2777", soft: "#FDF2F8" },
+  "nusa-apotek": { primary: "#0891B2", dark: "#0E7490", soft: "#ECFEFF" },
+  "nusa-fotocopy": { primary: "#7C3AED", dark: "#6D28D9", soft: "#F5F3FF" },
+  "nusa-servis": { primary: "#059669", dark: "#047857", soft: "#ECFDF5" },
+};
+
+export function getStoreTheme(store: StoreSettings | null) {
+  if (store?.primary_color && store.dark_color) {
+    return {
+      primary: store.primary_color,
+      dark: store.dark_color,
+      soft: store.soft_color || store.primary_color + "14",
+    };
+  }
+  const fallback = VARIANT_THEMES[store?.variant || ""] ?? VARIANT_THEMES["nusa-kelontong"];
+  return fallback;
 }
 
 export async function getProducts(

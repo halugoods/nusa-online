@@ -12,9 +12,12 @@ import {
   generateKeys,
   revokeLicense,
   deleteLicense,
+  PRODUCTS,
+  TIERS,
   type LicenseRecord,
   type LicenseDetail,
   type LicenseStats,
+  type LicenseTier,
   type ActivationRecord,
 } from "@/lib/license-manager";
 
@@ -53,8 +56,81 @@ function statusBadge(status: string): { bg: string; text: string; label: string 
   }
 }
 
+function tierBadge(tier: string): { label: string; bg: string } {
+  switch (tier) {
+    case "trial":
+      return { label: "Trial 3H", bg: "bg-amber-100 text-amber-800" };
+    case "1month":
+      return { label: "Bulanan", bg: "bg-blue-100 text-blue-800" };
+    case "lifetime":
+      return { label: "Lifetime", bg: "bg-purple-100 text-purple-800" };
+    default:
+      return { label: tier, bg: "bg-gray-100 text-gray-700" };
+  }
+}
+
+function productName(productId: string): string {
+  return PRODUCTS.find((p) => p.id === productId)?.name ?? productId;
+}
+
 function copyToClipboard(text: string) {
   navigator.clipboard.writeText(text);
+}
+
+// ─── Pesan otomatis untuk pembeli (Shopee) ────────────────────────────
+
+const PRODUCT_APP_NAMES: Record<string, string> = {
+  "nusa-kelontong": "NUSA Kelontong",
+  "nusa-fnb": "NUSA F&B",
+  "nusa-laundry": "NUSA Laundry",
+  "nusa-bengkel": "NUSA Bengkel",
+  "nusa-salon": "NUSA Salon",
+  "nusa-apotek": "NUSA Apotek",
+  "nusa-fotocopy": "NUSA Fotocopy",
+  "nusa-servis": "NUSA Servis",
+};
+
+function buildBuyerMessage(opts: {
+  buyerName: string;
+  productId: string;
+  key: string;
+  mode: "standar" | "singkat";
+}): string {
+  const appName = PRODUCT_APP_NAMES[opts.productId] ?? "NUSA";
+  const buyer = opts.buyerName?.trim() || "";
+  const greeting = buyer ? `Halo Kak ${buyer}!` : "Halo Kak!";
+
+  if (opts.mode === "singkat") {
+    return [
+      `${greeting} Ini key aktivasi ${appName} Anda:`,
+      "",
+      `🔑 ${opts.key}`,
+      "",
+      `Cara: buka app → Masuk dengan Google → "Sudah punya lisensi key" → masukkan key di atas. Simpan baik-baik ya. Terima kasih! 🙏`,
+    ].join("\n");
+  }
+
+  return [
+    `${greeting} 🙏`,
+    "",
+    `Terima kasih sudah membeli ${appName} di toko kami.`,
+    "",
+    "Berikut key aktivasi Anda:",
+    "",
+    `🔑 Key Aktivasi: ${opts.key}`,
+    "",
+    "📲 Cara Aktivasi:",
+    `1. Download & install aplikasi ${appName} (link sudah dikirim otomatis oleh Shopee).`,
+    '2. Buka aplikasi → pilih "Masuk dengan Google".',
+    '3. Pilih "Sudah punya lisensi key" → masukkan key di atas.',
+    "4. Ikuti setup nama toko & selesai! 🎉",
+    "",
+    "📌 Catatan:",
+    "• Key bisa dipakai di beberapa perangkat, selama pakai akun Google yang sama.",
+    "• Simpan key ini baik-baik — jika hilang, hubungi kami.",
+    "",
+    "Kalau ada kendala, balas chat ini ya. Terima kasih! 😊",
+  ].join("\n");
 }
 
 // ─── Login Screen ─────────────────────────────────────────────────────
@@ -89,7 +165,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
           <h1 className="text-2xl font-bold text-gray-900">NUSA Admin</h1>
           <p className="text-sm text-gray-500 mt-1">Manajemen Lisensi Aktivasi</p>
         </div>
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-border-subtle p-6 space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Admin Key
@@ -99,7 +175,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
               value={key}
               onChange={(e) => setKey(e.target.value)}
               placeholder="Masukkan admin key..."
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm"
+              className="w-full px-4 py-2.5 border border-input-border rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm"
               autoFocus
             />
           </div>
@@ -242,6 +318,8 @@ function LicensesTab() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState("");
+  const [productFilter, setProductFilter] = useState("");
+  const [tierFilter, setTierFilter] = useState("");
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [loading, setLoading] = useState(true);
@@ -255,14 +333,20 @@ function LicensesTab() {
     setLoading(true);
     setError("");
     try {
-      const res = await listLicenses(page, limit, statusFilter || undefined, search || undefined);
+      const res = await listLicenses(
+        page, limit,
+        statusFilter || undefined,
+        search || undefined,
+        productFilter || undefined,
+        tierFilter || undefined,
+      );
       setLicenses(res.licenses);
       setTotal(res.total);
     } catch (e: any) {
       setError(e.message);
     }
     setLoading(false);
-  }, [page, statusFilter, search]);
+  }, [page, statusFilter, productFilter, tierFilter, search]);
 
   useEffect(() => {
     fetchLicenses();
@@ -314,11 +398,11 @@ function LicensesTab() {
       )}
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 mb-4">
         <select
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
-          className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white"
+          className="px-3 py-2 border border-input-border rounded-xl text-sm bg-white"
         >
           <option value="">Semua Status</option>
           <option value="Generated">Generated</option>
@@ -328,16 +412,39 @@ function LicensesTab() {
           <option value="Expired">Expired</option>
           <option value="Suspended">Suspended</option>
         </select>
+
+        <select
+          value={productFilter}
+          onChange={(e) => { setProductFilter(e.target.value); setPage(0); }}
+          className="px-3 py-2 border border-input-border rounded-xl text-sm bg-white"
+        >
+          <option value="">Semua Produk</option>
+          {PRODUCTS.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+
+        <select
+          value={tierFilter}
+          onChange={(e) => { setTierFilter(e.target.value); setPage(0); }}
+          className="px-3 py-2 border border-input-border rounded-xl text-sm bg-white"
+        >
+          <option value="">Semua Tier</option>
+          {TIERS.map((t) => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+
         <form
           onSubmit={(e) => { e.preventDefault(); setSearch(searchInput); setPage(0); }}
-          className="flex gap-2 flex-1"
+          className="flex gap-2 flex-1 min-w-[200px]"
         >
           <input
             type="text"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Cari key atau email..."
-            className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm"
+            className="flex-1 px-3 py-2 border border-input-border rounded-xl text-sm"
           />
           <button
             type="submit"
@@ -367,9 +474,10 @@ function LicensesTab() {
                 <thead>
                   <tr className="bg-gray-50 text-left">
                     <th className="px-4 py-3 font-medium text-gray-600">Key</th>
+                    <th className="px-4 py-3 font-medium text-gray-600">Produk</th>
+                    <th className="px-4 py-3 font-medium text-gray-600">Tier</th>
                     <th className="px-4 py-3 font-medium text-gray-600 hidden sm:table-cell">Pemilik</th>
                     <th className="px-4 py-3 font-medium text-gray-600">Status</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 hidden md:table-cell">Google ID</th>
                     <th className="px-4 py-3 font-medium text-gray-600 hidden lg:table-cell">Tanggal</th>
                     <th className="px-4 py-3 font-medium text-gray-600 text-right">Aksi</th>
                   </tr>
@@ -377,6 +485,7 @@ function LicensesTab() {
                 <tbody className="divide-y divide-gray-50">
                   {licenses.map((lic) => {
                     const badge = statusBadge(lic.status);
+                    const tb = tierBadge(lic.tier);
                     return (
                       <tr key={lic.id} className="hover:bg-gray-50/50">
                         <td className="px-4 py-3">
@@ -384,21 +493,22 @@ function LicensesTab() {
                             {lic.key.length > 18 ? lic.key.slice(0, 18) + "..." : lic.key}
                           </code>
                         </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-medium text-gray-700">
+                            {productName(lic.product)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${tb.bg}`}>
+                            {tb.label}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 text-gray-600 hidden sm:table-cell">
                           {lic.owner_email || <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${badge.bg}`}>
                             {badge.label}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 hidden md:table-cell">
-                          <span className="text-xs font-mono font-medium text-gray-600">
-                            {lic.google_user_id
-                              ? lic.google_user_id.length > 16
-                                ? lic.google_user_id.slice(0, 16) + "..."
-                                : lic.google_user_id
-                              : <span className="text-gray-300">—</span>}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">
@@ -448,14 +558,14 @@ function LicensesTab() {
                 <button
                   disabled={page === 0}
                   onClick={() => setPage(page - 1)}
-                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
+                  className="px-3 py-1.5 border border-input-border rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
                 >
                   ← Prev
                 </button>
                 <button
                   disabled={page >= totalPages - 1}
                   onClick={() => setPage(page + 1)}
-                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
+                  className="px-3 py-1.5 border border-input-border rounded-lg disabled:opacity-30 hover:bg-gray-50 transition-colors"
                 >
                   Next →
                 </button>
@@ -487,6 +597,7 @@ function LicenseDetailModal({
   onClose: () => void;
 }) {
   const badge = statusBadge(license.status);
+  const tb = tierBadge(license.tier);
 
   return (
     <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-20 p-4" onClick={onClose}>
@@ -520,7 +631,12 @@ function LicenseDetailModal({
               </button>
             </DetailRow>
             <DetailRow label="Serial" value={license.serial} />
-            <DetailRow label="Product" value={license.product} />
+            <DetailRow label="Produk" value={productName(license.product)} />
+            <DetailRow label="Tier">
+              <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${tb.bg}`}>
+                {tb.label}
+              </span>
+            </DetailRow>
             <DetailRow label="Pemilik" value={license.owner_email ?? "—"} />
             <DetailRow label="Google ID" value={license.google_user_id ?? "—"} />
             <DetailRow label="Dibuat" value={formatDate(license.created_at)} />
@@ -576,9 +692,10 @@ function GenerateTab() {
   const [ownerEmail, setOwnerEmail] = useState("");
   const [buyerName, setBuyerName] = useState("");
   const [sendEmail, setSendEmail] = useState(false);
-  const [isTrial, setIsTrial] = useState(false);
+  const [product, setProduct] = useState("nusa-kelontong");
+  const [tier, setTier] = useState<LicenseTier>("lifetime");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ count: number; keys: string[]; is_trial?: boolean; expires_at?: string; email_sent?: boolean; email_error?: string } | null>(null);
+  const [result, setResult] = useState<{ count: number; keys: string[]; product?: string; tier?: string; expires_at?: string; email_sent?: boolean; email_error?: string } | null>(null);
   const [error, setError] = useState("");
   const [copiedAll, setCopiedAll] = useState(false);
 
@@ -586,6 +703,7 @@ function GenerateTab() {
   const [manualKey, setManualKey] = useState("");
   const [manualSerial, setManualSerial] = useState("");
   const [manualEmail, setManualEmail] = useState("");
+  const [manualProduct, setManualProduct] = useState("nusa-kelontong");
   const [manualLoading, setManualLoading] = useState(false);
   const [manualResult, setManualResult] = useState("");
 
@@ -594,13 +712,34 @@ function GenerateTab() {
     setLoading(true);
     setError("");
     setResult(null);
+    setActiveMessageIndex(null);
     try {
-      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail, isTrial);
+      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail, product, tier);
       setResult(res);
+      // Auto-buka pesan key pertama setelah generate berhasil
+      if (res.keys?.length) setActiveMessageIndex(0);
     } catch (e: any) {
       setError(e.message);
     }
     setLoading(false);
+  }
+
+  // Pesan otomatis per key untuk pembeli (Shopee)
+  const [activeMessageIndex, setActiveMessageIndex] = useState<number | null>(null);
+  const [messageCopied, setMessageCopied] = useState(false);
+  const [messageMode, setMessageMode] = useState<"standar" | "singkat">("standar");
+
+  async function copyMessage(key: string, e?: React.MouseEvent) {
+    e?.stopPropagation();
+    const msg = buildBuyerMessage({
+      buyerName,
+      productId: product,
+      key,
+      mode: messageMode,
+    });
+    await navigator.clipboard.writeText(msg);
+    setMessageCopied(true);
+    setTimeout(() => setMessageCopied(false), 2000);
   }
 
   async function handleAddManual(e: React.FormEvent) {
@@ -610,7 +749,7 @@ function GenerateTab() {
     setManualResult("");
     try {
       const { addKey } = await import("@/lib/license-manager");
-      await addKey(manualKey.trim(), manualSerial.trim(), manualEmail || undefined);
+      await addKey(manualKey.trim(), manualSerial.trim(), manualEmail || undefined, manualProduct);
       setManualResult("Key berhasil ditambahkan!");
       setManualKey("");
       setManualSerial("");
@@ -628,18 +767,53 @@ function GenerateTab() {
     setTimeout(() => setCopiedAll(false), 2000);
   }
 
+  const selectedProductName = PRODUCTS.find((p) => p.id === product)?.name ?? product;
+  const selectedTierData = TIERS.find((t) => t.id === tier);
+
   return (
     <div className="space-y-8">
       {/* Auto Generate */}
       <div>
         <h2 className="text-lg font-bold text-gray-900 mb-1">Generate Key Baru</h2>
         <p className="text-xs text-gray-500 mb-4">
-          Generate key aktivasi baru. Tanpa NUSA_PRIVATE_KEY di server, key yang dihasilkan
-          bersifat placeholder — gunakan keygen.dart CLI untuk key yang siap pakai.
+          Generate key aktivasi dengan produk dan tier yang dipilih.
         </p>
 
         <form onSubmit={handleGenerate} className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Product */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Produk / Aplikasi
+              </label>
+              <select
+                value={product}
+                onChange={(e) => setProduct(e.target.value)}
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white"
+              >
+                {PRODUCTS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Tier */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Tier / Paket
+              </label>
+              <select
+                value={tier}
+                onChange={(e) => setTier(e.target.value as LicenseTier)}
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white"
+              >
+                {TIERS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label} — {t.desc}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Count */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Jumlah Key
@@ -650,9 +824,11 @@ function GenerateTab() {
                 max={100}
                 value={count}
                 onChange={(e) => setCount(parseInt(e.target.value) || 1)}
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
               />
             </div>
+
+            {/* Buyer Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Nama Pembeli <span className="text-gray-400 font-normal">(optional)</span>
@@ -662,9 +838,11 @@ function GenerateTab() {
                 value={buyerName}
                 onChange={(e) => setBuyerName(e.target.value)}
                 placeholder="Budi Santoso"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
               />
             </div>
+
+            {/* Email */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
                 Email Pembeli <span className="text-gray-400 font-normal">(optional)</span>
@@ -674,22 +852,11 @@ function GenerateTab() {
                 value={ownerEmail}
                 onChange={(e) => setOwnerEmail(e.target.value)}
                 placeholder="pembeli@email.com"
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
               />
             </div>
-            <div className="flex items-end pb-1">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={isTrial}
-                  onChange={(e) => setIsTrial(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-300/20 accent-amber-500"
-                />
-                <span className="text-sm text-gray-700 font-medium">
-                  ⏳ Trial 30 Hari
-                </span>
-              </label>
-            </div>
+
+            {/* Send Email */}
             <div className="flex items-end pb-1">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
@@ -715,24 +882,29 @@ function GenerateTab() {
             disabled={loading}
             className="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm"
           >
-            {loading ? "Generating..." : "Generate"}
+            {loading ? "Generating..." : `Generate Key untuk ${selectedProductName}`}
           </button>
         </form>
 
         {result && (
           <div className="mt-4 bg-white rounded-xl border border-green-200 p-5">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-medium text-green-700">
-                ✅ {result.count} key {result.is_trial ? "trial" : ""} berhasil di-generate
-                {result.is_trial && result.expires_at && (
-                  <span className="block text-xs text-amber-600 mt-0.5">
+              <div>
+                <p className="text-sm font-medium text-green-700">
+                  ✅ {result.count} key berhasil di-generate
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Produk: {productName(result.product ?? "")} · Tier: {TIERS.find((t) => t.id === result.tier)?.label ?? result.tier}
+                </p>
+                {result.expires_at && (
+                  <span className="inline-block mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
                     ⏳ Expires: {new Date(result.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                   </span>
                 )}
-              </p>
+              </div>
               <button
                 onClick={copyAllKeys}
-                className="text-xs text-primary hover:underline"
+                className="text-xs text-primary hover:underline shrink-0"
               >
                 {copiedAll ? "Copied!" : "Copy Semua"}
               </button>
@@ -764,6 +936,73 @@ function GenerateTab() {
                 </code>
               ))}
             </div>
+
+            {/* ── Pesan otomatis untuk pembeli (Shopee) ── */}
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <p className="text-xs font-medium text-gray-600">
+                  💬 Pesan otomatis untuk pembeli ({productName(result.product ?? "")})
+                </p>
+                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                  {(["standar", "singkat"] as const).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setMessageMode(m)}
+                      className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition-colors ${
+                        messageMode === m
+                          ? "bg-white text-gray-900 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700"
+                      }`}
+                    >
+                      {m === "standar" ? "Standar" : "Singkat"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pilih key mana yang pesannya mau disalin */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {result.keys.map((k, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setActiveMessageIndex(i)}
+                    className={`px-2 py-1 rounded-md text-[11px] font-mono transition-colors ${
+                      activeMessageIndex === i
+                        ? "bg-primary text-white"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    Key {i + 1}
+                  </button>
+                ))}
+              </div>
+
+              {activeMessageIndex !== null && result.keys[activeMessageIndex] && (
+                <div className="border border-gray-200 rounded-xl overflow-hidden">
+                  <div className="bg-gray-50 px-3 py-2 flex items-center justify-between">
+                    <p className="text-[11px] text-gray-500">
+                      Salin & kirim ke pembeli (mode {messageMode})
+                    </p>
+                    <button
+                      onClick={(e) => copyMessage(result.keys[activeMessageIndex], e)}
+                      className={`text-[11px] font-medium transition-colors ${
+                        messageCopied ? "text-green-600" : "text-primary hover:underline"
+                      }`}
+                    >
+                      {messageCopied ? "✓ Copied!" : "Copy Pesan"}
+                    </button>
+                  </div>
+                  <pre className="whitespace-pre-wrap text-xs text-gray-700 px-3 py-3 bg-white font-sans leading-relaxed">
+                    {buildBuyerMessage({
+                      buyerName,
+                      productId: product,
+                      key: result.keys[activeMessageIndex],
+                      mode: messageMode,
+                    })}
+                  </pre>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -788,7 +1027,7 @@ function GenerateTab() {
               value={manualKey}
               onChange={(e) => setManualKey(e.target.value)}
               placeholder="NUSA-XXXX-XXXX-XXXX..."
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
             />
           </div>
           <div>
@@ -801,20 +1040,37 @@ function GenerateTab() {
               onChange={(e) => setManualSerial(e.target.value)}
               placeholder="XXXXXXXX"
               maxLength={8}
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
             />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Email Pembeli <span className="text-gray-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="email"
-              value={manualEmail}
-              onChange={(e) => setManualEmail(e.target.value)}
-              placeholder="pembeli@email.com"
-              className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-            />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Produk
+              </label>
+              <select
+                value={manualProduct}
+                onChange={(e) => setManualProduct(e.target.value)}
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white"
+              >
+                {PRODUCTS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Email Pembeli <span className="text-gray-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="email"
+                value={manualEmail}
+                onChange={(e) => setManualEmail(e.target.value)}
+                placeholder="pembeli@email.com"
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              />
+            </div>
           </div>
 
           {manualResult && (

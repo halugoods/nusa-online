@@ -3,11 +3,13 @@
 // Deploy: supabase functions deploy online-store --project-ref sakeuhcbcnueplzlkltm
 // ============================================================================
 // Handles all admin operations for the online store:
-//   action: 'upsert_store'  — create/update store settings
-//   action: 'sync_products' — batch upsert products for a store
-//   action: 'get_orders'    — get online orders for a store
-//   action: 'update_order'  — update order status (state machine)
-//   action: 'get_store'     — get store settings
+//   action: 'upsert_store'   — create/update store settings (slug unik per variant)
+//   action: 'check_slug'     — cek ketersediaan slug (untuk input real-time)
+//   action: 'sync_products'  — batch upsert products for a store
+//   action: 'get_orders'     — get online orders for a store
+//   action: 'update_order'   — update order status (state machine)
+//   action: 'get_store'      — get store settings
+//   action: 'get_store_by_variant_slug' — public storefront lookup
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
@@ -35,6 +37,8 @@ serve(async (req: Request) => {
     switch (action) {
       case "upsert_store":
         return upsertStore(supabase, params);
+      case "check_slug":
+        return checkSlug(supabase, params);
       case "sync_products":
         return syncProducts(supabase, params);
       case "get_orders":
@@ -43,6 +47,8 @@ serve(async (req: Request) => {
         return updateOrder(supabase, params);
       case "get_store":
         return getStore(supabase, params);
+      case "get_store_by_variant_slug":
+        return getStoreByVariantSlug(supabase, params);
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -51,10 +57,38 @@ serve(async (req: Request) => {
   }
 });
 
+// ─── Slug helpers ────────────────────────────────────────────────────
+// Slug hanya huruf kecil, angka, dan tanda hubung. Panjang maks 40.
+function isValidSlug(slug: string): boolean {
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 40;
+}
+
 // ─── Upsert store settings ──────────────────────────────────────────
 async function upsertStore(supabase: any, params: any) {
-  const { store_id, store_name, description, whatsapp, address, open_hours, is_active } = params;
+  const {
+    store_id, store_name, description, whatsapp, address, open_hours,
+    is_active, slug, variant, theme_id, primary_color, dark_color, soft_color,
+  } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+
+  // Validasi slug jika dikirim (wajib valid + unik per variant)
+  if (slug !== undefined && slug !== null && slug !== "") {
+    if (!isValidSlug(slug)) {
+      return jsonResponse({ error: "slug_invalid" }, 400);
+    }
+    // Cek slug dipakai toko LAIN (variant sama, store_id beda)
+    const { data: existing, error: checkErr } = await supabase
+      .from("store_settings")
+      .select("store_id")
+      .eq("variant", variant ?? "")
+      .eq("slug", slug)
+      .neq("store_id", store_id)
+      .maybeSingle();
+    if (checkErr) return jsonResponse({ error: checkErr.message }, 500);
+    if (existing) {
+      return jsonResponse({ error: "slug_taken" }, 409);
+    }
+  }
 
   const { error } = await supabase.from("store_settings").upsert({
     store_id,
@@ -64,11 +98,36 @@ async function upsertStore(supabase: any, params: any) {
     address: address ?? "",
     open_hours: open_hours ?? "08:00 - 21:00",
     is_active: is_active ?? false,
+    slug: slug ?? "",
+    variant: variant ?? "",
+    theme_id: theme_id ?? "",
+    primary_color: primary_color ?? "",
+    dark_color: dark_color ?? "",
+    soft_color: soft_color ?? "",
     updated_at: new Date().toISOString(),
   }, { onConflict: "store_id" });
 
   if (error) return jsonResponse({ error: error.message }, 500);
   return jsonResponse({ ok: true });
+}
+
+// ─── Cek ketersediaan slug (real-time saat user mengetik) ───────────
+async function checkSlug(supabase: any, params: any) {
+  const { slug, variant } = params;
+  if (!slug) return jsonResponse({ error: "slug required" }, 400);
+  if (!isValidSlug(slug)) {
+    return jsonResponse({ available: false, reason: "invalid" });
+  }
+
+  const { data, error } = await supabase
+    .from("store_settings")
+    .select("store_id")
+    .eq("variant", variant ?? "")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) return jsonResponse({ error: error.message }, 500);
+
+  return jsonResponse({ available: !data, reason: data ? "taken" : "ok" });
 }
 
 // ─── Sync products (batch upsert) ──────────────────────────────────
@@ -194,6 +253,27 @@ async function getStore(supabase: any, params: any) {
     .from("store_settings")
     .select("*")
     .eq("store_id", store_id)
+    .eq("is_active", true)
+    .maybeSingle();
+
+  if (error) return jsonResponse({ error: error.message }, 500);
+  if (!data) return jsonResponse({ error: "Store not found or inactive" }, 404);
+
+  return jsonResponse({ store: data });
+}
+
+// ─── Public storefront lookup: /toko/{variant}/{slug} ──────────────
+async function getStoreByVariantSlug(supabase: any, params: any) {
+  const { variant, slug } = params;
+  if (!variant || !slug) {
+    return jsonResponse({ error: "variant and slug required" }, 400);
+  }
+
+  const { data, error } = await supabase
+    .from("store_settings")
+    .select("*")
+    .eq("variant", variant)
+    .eq("slug", slug)
     .eq("is_active", true)
     .maybeSingle();
 

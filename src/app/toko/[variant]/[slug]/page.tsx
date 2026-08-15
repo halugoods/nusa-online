@@ -2,13 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  getStoreBySlug, getProducts, submitOrder, formatRupiah,
-  CartItem, OnlineProduct, StoreSettings, statusColor,
-  getOrders, cancelOrder, OnlineOrder, SubmitOrderResult,
+  getStoreByVariantSlugOrLegacy, getProducts, submitOrder, formatRupiah,
+  CartItem, OnlineProduct, StoreSettings, getOrders, cancelOrder,
+  OnlineOrder, SubmitOrderResult, getStoreTheme,
 } from "@/lib/supabase";
 import ProductCard from "@/components/ProductCard";
-
-const CATS = ["Semua", "Makanan", "Minuman", "Sembako", "Lainnya"];
 
 const FAV_KEY = "nusa_fav";
 function loadFavs(): number[] {
@@ -26,11 +24,12 @@ function saveOrds(ords: OnlineOrder[]) {
   try { localStorage.setItem(ORD_KEY, JSON.stringify(ords)); } catch {}
 }
 
-export default function StorePage({ params }: { params: { slug: string } }) {
-  const slug = params.slug;
+export default function StorePage({ params }: { params: { variant: string; slug: string } }) {
+  const { variant, slug } = params;
 
   const [store, setStore] = useState<StoreSettings | null>(null);
   const [products, setProducts] = useState<OnlineProduct[]>([]);
+  const [categories, setCategories] = useState<string[]>(["Semua"]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("Semua");
   const [search, setSearch] = useState("");
@@ -65,13 +64,21 @@ export default function StorePage({ params }: { params: { slug: string } }) {
   useEffect(() => { setFavIds(loadFavs()); }, []);
 
   useEffect(() => {
-    if (!slug) return;
-    getStoreBySlug(slug).then((s) => {
+    if (!variant || !slug) return;
+    getStoreByVariantSlugOrLegacy(variant, slug).then((s) => {
       if (!s) { setLoading(false); return; }
       setStore(s);
-      getProducts(s.store_id).then((p) => { setProducts(p ?? []); setLoading(false); });
+      getProducts(s.store_id).then((p) => {
+        setProducts(p ?? []);
+        const cats = Array.from(new Set((p ?? []).map((x) => x.category).filter(Boolean))) as string[];
+        setCategories(["Semua", ...cats]);
+        setLoading(false);
+      });
     });
-  }, [slug]);
+  }, [variant, slug]);
+
+  const theme = getStoreTheme(store);
+  const isOpen = store?.is_active ?? false;
 
   /* ── cart helpers ── */
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0);
@@ -151,13 +158,18 @@ export default function StorePage({ params }: { params: { slug: string } }) {
     return true;
   });
   const favProducts = products.filter((p) => favIds.includes(p.product_id));
-  const isOpen = store?.is_active ?? false;
+
+  const cssVars = {
+    "--primary": theme.primary,
+    "--primary-dark": theme.dark,
+    "--primary-soft": theme.soft,
+  } as React.CSSProperties;
 
   /* ── loading ── */
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="w-10 h-10 border-[3px] border-primary border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-[3px] border-[var(--primary)] border-t-transparent rounded-full animate-spin" style={{ borderTopColor: theme.primary }} />
       </div>
     );
   }
@@ -167,9 +179,17 @@ export default function StorePage({ params }: { params: { slug: string } }) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-8 text-center">
         <div>
-          <div className="w-20 h-20 mx-auto mb-4 rounded-3xl bg-primary/10 flex items-center justify-center text-3xl">T</div>
+          <div className="w-20 h-20 mx-auto mb-4 rounded-3xl flex items-center justify-center text-3xl text-white font-extrabold"
+            style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>N</div>
           <h1 className="text-xl font-extrabold text-text-primary">Toko Tidak Ditemukan</h1>
-          <p className="text-text-tertiary text-sm mt-2">Link <b className="text-text-secondary">{slug}</b> tidak aktif.</p>
+          <p className="text-text-tertiary text-sm mt-2">
+            Link <b className="text-text-secondary">{variant}/{slug}</b> tidak aktif atau belum dibuat.
+          </p>
+          <button
+            onClick={() => window.location.href = "/"}
+            className="mt-6 px-6 py-3 rounded-[14px] text-white text-sm font-bold active:opacity-90 transition-all"
+            style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}
+          >Kembali ke NUSA</button>
         </div>
       </div>
     );
@@ -186,13 +206,14 @@ export default function StorePage({ params }: { params: { slug: string } }) {
             </svg>
           </div>
           <h1 className="text-2xl font-extrabold text-text-primary">Pesanan Berhasil!</h1>
-          <p className="text-lg font-extrabold text-primary mt-1">#{lastInv}</p>
+          <p className="text-lg font-extrabold mt-1" style={{ color: theme.primary }}>#{lastInv}</p>
           <p className="text-text-secondary text-sm mt-2">Pesanan Anda sedang diproses.</p>
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setSuccess(false); setTab("home"); }} className="flex-1 border-[1.5px] border-divider rounded-[14px] py-3.5 text-sm font-semibold text-text-secondary active:bg-background transition-colors">
               Kembali
             </button>
-            <button onClick={() => { setHistPhone(custPhone); setSuccess(false); setTab("history"); }} className="flex-1 bg-primary text-white rounded-[14px] py-3.5 text-sm font-bold active:opacity-90 active:scale-[0.98] transition-all">
+            <button onClick={() => { setHistPhone(custPhone); setSuccess(false); setTab("history"); }} className="flex-1 text-white rounded-[14px] py-3.5 text-sm font-bold active:opacity-90 active:scale-[0.98] transition-all"
+              style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>
               Lacak Pesanan
             </button>
           </div>
@@ -202,13 +223,13 @@ export default function StorePage({ params }: { params: { slug: string } }) {
   }
 
   return (
-    <div className="min-h-[100dvh] bg-background pb-24 max-w-[480px] mx-auto">
+    <div className="min-h-[100dvh] bg-background pb-24 max-w-[480px] mx-auto" style={cssVars}>
       {/* ═══════ HEADER (match Flutter StorefrontScreen header) ═══════ */}
       <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur-lg border-b border-divider">
         <div className="flex items-start gap-3 px-3 py-3">
           {/* Logo avatar — gradient N */}
           <div className="w-11 h-11 rounded-md flex items-center justify-center flex-shrink-0"
-            style={{ background: "linear-gradient(135deg, #E40000, #B80000)", boxShadow: "0 4px 8px rgba(228,0,0,.3)" }}>
+            style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})`, boxShadow: `0 4px 8px ${theme.primary}40` }}>
             <span className="text-white text-[22px] font-extrabold">N</span>
           </div>
           <div className="flex-1 min-w-0">
@@ -225,7 +246,8 @@ export default function StorePage({ params }: { params: { slug: string } }) {
               <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/>
             </svg>
             {cartCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-primary text-white text-[10px] font-extrabold flex items-center justify-center px-1">
+              <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full text-white text-[10px] font-extrabold flex items-center justify-center px-1"
+                style={{ background: theme.primary }}>
                 {cartCount > 9 ? "9+" : cartCount}
               </span>
             )}
@@ -249,19 +271,19 @@ export default function StorePage({ params }: { params: { slug: string } }) {
         </div>
       )}
 
-      {/* ═══════ CATEGORY CHIPS (match Flutter FilterChip) ═══════ */}
+      {/* ═══════ CATEGORY CHIPS (dinamis dari kategori produk asli) ═══════ */}
       {tab === "home" && (
         <div className="flex gap-2 px-3 py-2 overflow-x-auto scrollbar-none">
-          {CATS.map((c) => (
+          {categories.map((c) => (
             <button
               key={c}
               onClick={() => setCategory(c)}
               className={`px-[18px] py-[9px] rounded-full text-[13px] font-bold whitespace-nowrap transition-all active:scale-95 ${
                 category === c
-                  ? "bg-primary text-white border-primary shadow-[0_2px_8px_rgba(228,0,0,.25)]"
+                  ? "text-white"
                   : "bg-surface text-text-secondary border border-divider"
               }`}
-              style={{ borderWidth: category === c ? "0px" : "1px" }}
+              style={category === c ? { background: theme.primary, boxShadow: `0 2px 8px ${theme.primary}40` } : undefined}
             >
               {c}
             </button>
@@ -328,9 +350,11 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                 <input
                   placeholder="0812-3456-7890" value={histPhone}
                   onChange={(e) => setHistPhone(e.target.value)}
-                  className="flex-1 px-3 h-11 rounded-[10px] border border-divider text-sm text-text-primary outline-none focus:border-primary transition-colors"
+                  className="flex-1 px-3 h-11 rounded-[10px] border border-divider text-sm text-text-primary outline-none focus:border-[var(--primary)] transition-colors"
                 />
-                <button onClick={searchOrders} disabled={ordLoading} className="bg-primary text-white text-sm font-bold px-5 h-11 rounded-[10px] active:opacity-90 disabled:opacity-50 transition-all">
+                <button onClick={searchOrders} disabled={ordLoading}
+                  className="text-white text-sm font-bold px-5 h-11 rounded-[10px] active:opacity-90 disabled:opacity-50 transition-all"
+                  style={{ background: theme.primary }}>
                   {ordLoading ? "..." : "Cari"}
                 </button>
               </div>
@@ -367,7 +391,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                           <p className="text-xs text-text-secondary font-medium mt-0.5">{o.payment_method}</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-extrabold text-primary">{formatRupiah(o.total)}</p>
+                          <p className="text-sm font-extrabold" style={{ color: theme.primary }}>{formatRupiah(o.total)}</p>
                           {o.status === "Online Baru" && (
                             <button onClick={() => cancelOrd(o.id)} className="text-xs text-error font-bold mt-1 hover:underline">Batalkan</button>
                           )}
@@ -386,13 +410,14 @@ export default function StorePage({ params }: { params: { slug: string } }) {
       {cartCount > 0 && tab === "home" && !cartOpen && (
         <div className="fixed bottom-[72px] left-0 right-0 z-40 max-w-[480px] mx-auto px-3">
           <button onClick={() => setCartOpen(true)} className="w-full flex items-center px-[18px] py-[14px] rounded-xl shadow-bar active:scale-[0.98] transition-all"
-            style={{ background: "linear-gradient(90deg, #E40000, #B80000)" }}>
+            style={{ background: `linear-gradient(90deg, ${theme.primary}, ${theme.dark})` }}>
             <div className="flex-1 text-left">
               <p className="text-xs text-white/85">{cartCount} item</p>
               <p className="text-xl font-extrabold text-white tracking-[-0.5px]">{formatRupiah(cartTotal)}</p>
             </div>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" strokeWidth="2" className="mr-2"><path d="M6 9l6 6 6-6"/></svg>
-            <span className="bg-white text-primary text-[15px] font-bold px-7 py-[14px] rounded-[14px] active:scale-95 transition-transform">Bayar</span>
+            <span className="text-white text-[15px] font-bold px-7 py-[14px] rounded-[14px] active:scale-95 transition-transform"
+              style={{ background: "rgba(255,255,255,.18)" }}>Bayar</span>
           </button>
         </div>
       )}
@@ -407,11 +432,12 @@ export default function StorePage({ params }: { params: { slug: string } }) {
           <button
             key={id}
             onClick={() => { setTab(id); setCartOpen(false); }}
-            className={`flex-1 flex flex-col items-center py-2 transition-colors ${tab === id ? "text-primary" : "text-text-tertiary"}`}
+            className={`flex-1 flex flex-col items-center py-2 transition-colors ${tab === id ? "" : "text-text-tertiary"}`}
+            style={tab === id ? { color: theme.primary } : undefined}
           >
             {svg}
             <span className="text-[11px] font-semibold mt-0.5">{label}</span>
-            {tab === id && <div className="w-5 h-[3px] rounded-full bg-primary mt-1" />}
+            {tab === id && <div className="w-5 h-[3px] rounded-full mt-1" style={{ background: theme.primary }} />}
             {tab !== id && <div className="w-5 h-[3px] mt-1" />}
           </button>
         ))}
@@ -430,7 +456,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
               {/* Header */}
               <div className="flex items-center justify-between px-4 pb-2">
                 <h2 className="text-base font-bold text-text-primary">Keranjang</h2>
-                {cart.length > 0 && <button onClick={clearCart} className="text-[13px] font-semibold text-primary">Kosongkan</button>}
+                {cart.length > 0 && <button onClick={clearCart} className="text-[13px] font-semibold" style={{ color: theme.primary }}>Kosongkan</button>}
               </div>
 
               <div className="flex-1 overflow-y-auto px-4">
@@ -442,7 +468,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                 ) : (
                   <div className="space-y-2 pb-4">
                     {cart.map((item) => (
-                      <div key={item.product_id} className="flex items-center gap-0 p-3 rounded-[14px] border border-border bg-surface">
+                      <div key={item.product_id} className="flex items-center gap-0 p-3 rounded-[14px] border border-border-subtle bg-surface">
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-text-primary truncate">{item.name}</p>
                           <p className="text-xs text-text-secondary mt-0.5">{formatRupiah(item.price)}</p>
@@ -457,7 +483,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
                           </button>
                         </div>
-                        <span className="text-sm font-semibold text-primary ml-2 min-w-[70px] text-right">{formatRupiah(item.subtotal)}</span>
+                        <span className="text-sm font-semibold ml-2 min-w-[70px] text-right" style={{ color: theme.primary }}>{formatRupiah(item.subtotal)}</span>
                       </div>
                     ))}
                   </div>
@@ -471,9 +497,10 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                     <>
                       <div className="flex justify-between items-center py-3">
                         <span className="text-sm font-semibold text-text-secondary">{cartCount} item</span>
-                        <span className="text-base font-extrabold text-primary">{formatRupiah(cartTotal)}</span>
+                        <span className="text-base font-extrabold" style={{ color: theme.primary }}>{formatRupiah(cartTotal)}</span>
                       </div>
-                      <button onClick={() => setCheckoutView(true)} className="w-full bg-primary text-white rounded-[14px] py-3.5 text-[15px] font-bold active:opacity-90 active:scale-[0.98] transition-all">
+                      <button onClick={() => setCheckoutView(true)} className="w-full text-white rounded-[14px] py-3.5 text-[15px] font-bold active:opacity-90 active:scale-[0.98] transition-all"
+                        style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>
                         Lanjutkan Pesanan
                       </button>
                     </>
@@ -481,7 +508,7 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                     /* Checkout form (match Flutter _showCheckoutSheet) */
                     <div className="space-y-3 max-h-[50vh] overflow-y-auto pb-2">
                       <p className="text-lg font-bold text-text-primary">Selesaikan Pembayaran</p>
-                      <p className="text-[32px] font-extrabold text-primary tracking-[-1px]">{formatRupiah(cartTotal)}</p>
+                      <p className="text-[32px] font-extrabold tracking-[-1px]" style={{ color: theme.primary }}>{formatRupiah(cartTotal)}</p>
 
                       <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">DATA PEMESAN</p>
                       <div className="flex items-center gap-2 bg-input-fill border border-divider rounded-md px-3 h-[50px]">
@@ -506,8 +533,9 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                               key={m}
                               onClick={() => setPayment(m)}
                               className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-[14px] border-2 text-[13px] font-bold transition-all active:scale-95 ${
-                                payment === m ? "border-primary bg-primary-soft text-primary" : "border-divider bg-surface text-text-secondary"
+                                payment === m ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-divider bg-surface text-text-secondary"
                               }`}
+                              style={payment === m ? { borderColor: theme.primary, background: theme.soft, color: theme.dark } : undefined}
                             >
                               {icons[m]} {m}
                             </button>
@@ -519,7 +547,8 @@ export default function StorePage({ params }: { params: { slug: string } }) {
                         <button onClick={() => setCheckoutView(false)} className="flex-1 border-[1.5px] border-divider rounded-[14px] py-3.5 text-[15px] font-semibold text-text-secondary active:bg-background transition-colors">
                           Kembali
                         </button>
-                        <button onClick={handleSubmit} disabled={submitting} className="flex-1 bg-primary text-white rounded-[14px] py-3.5 text-[15px] font-bold active:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50">
+                        <button onClick={handleSubmit} disabled={submitting} className="flex-1 text-white rounded-[14px] py-3.5 text-[15px] font-bold active:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
+                          style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>
                           {submitting ? "Mengirim..." : "Pesan Sekarang"}
                         </button>
                       </div>
