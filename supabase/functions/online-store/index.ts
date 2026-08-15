@@ -150,7 +150,11 @@ async function syncProducts(supabase: any, params: any) {
     updated_at: now,
   }));
 
-  // Delete old products, then insert new batch (clean sync)
+  // Delete old products, then insert new batch (clean sync).
+  // Pakai .insert() BUKAN upsert(onConflict): online_products awalnya tidak
+  // punya unique index → upsert dengan onConflict gagal 500 setelah delete.
+  // Unique index idx_op_store_product (migrasi 0011) sudah ada sekarang,
+  // dan .insert() aman karena tabel sudah kosong per store_id.
   const { error: delErr } = await supabase
     .from("online_products")
     .delete()
@@ -158,11 +162,13 @@ async function syncProducts(supabase: any, params: any) {
 
   if (delErr) return jsonResponse({ error: delErr.message }, 500);
 
-  const { error: insErr } = await supabase
-    .from("online_products")
-    .upsert(rows, { onConflict: "store_id, product_id" });
+  if (rows.length > 0) {
+    const { error: insErr } = await supabase
+      .from("online_products")
+      .insert(rows);
 
-  if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+  }
 
   return jsonResponse({ ok: true, count: rows.length });
 }
@@ -244,7 +250,10 @@ async function updateOrder(supabase: any, params: any) {
   return jsonResponse({ ok: true, status });
 }
 
-// ─── Get store settings ────────────────────────────────────────────
+// ─── Get store settings (admin app) ────────────────────────────
+// TANPA filter is_active: app harus bisa membaca toko walau toggle
+// OFF (mis. user baru saja mematikan lalu kembali ke layar). Storefront
+// publik (getStoreByVariantSlug) yang memfilter is_active.
 async function getStore(supabase: any, params: any) {
   const { store_id } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
@@ -253,11 +262,10 @@ async function getStore(supabase: any, params: any) {
     .from("store_settings")
     .select("*")
     .eq("store_id", store_id)
-    .eq("is_active", true)
     .maybeSingle();
 
   if (error) return jsonResponse({ error: error.message }, 500);
-  if (!data) return jsonResponse({ error: "Store not found or inactive" }, 404);
+  if (!data) return jsonResponse({ error: "Store not found" }, 404);
 
   return jsonResponse({ store: data });
 }
