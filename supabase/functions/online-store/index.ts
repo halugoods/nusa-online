@@ -3,13 +3,17 @@
 // Deploy: supabase functions deploy online-store --project-ref sakeuhcbcnueplzlkltm
 // ============================================================================
 // Handles all admin operations for the online store:
-//   action: 'upsert_store'   — create/update store settings (slug unik per variant)
-//   action: 'check_slug'     — cek ketersediaan slug (untuk input real-time)
-//   action: 'sync_products'  — batch upsert products for a store
-//   action: 'get_orders'     — get online orders for a store
-//   action: 'update_order'   — update order status (state machine)
-//   action: 'get_store'      — get store settings
+//   action: 'upsert_store'      — create/update store settings (slug unik per variant)
+//   action: 'check_slug'        — cek ketersediaan slug (untuk input real-time)
+//   action: 'sync_products'     — batch upsert products for a store
+//   action: 'get_orders'        — get online orders for a store
+//   action: 'update_order'      — update order status (state machine)
+//   action: 'get_store'         — get store settings
 //   action: 'get_store_by_variant_slug' — public storefront lookup
+//   action: 'submit_order'      — order dari web storefront (WA normalize + anti-dobel customer + poin + promo + referral)
+//   action: 'redeem_points'     — tukar poin member (validasi saldo)
+//   action: 'sync_branches'     — upload cabang Aktif + WA per cabang → tabel branches
+//   action: 'sync_promos'       — upload promo (quota/periode/minSpend/limitPerUser) → tabel promos
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
@@ -20,6 +24,22 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// ─── WA normalize (adaptasi GAS normalizePhoneTo08 + formatWA) ──────
+// Simpan selalu bentuk 08xx (strip non-digit, 62→0, 8→08).
+function normalizePhoneTo08(phone: any): string {
+  if (!phone) return "";
+  const clean = String(phone).replace(/[^0-9]/g, "");
+  if (clean.startsWith("62")) return "0" + clean.substring(2);
+  if (clean.startsWith("8")) return "0" + clean;
+  return clean;
+}
+// wa.me butuh 62xx — 08xx → 62xx.
+function formatWA(phone: string): string {
+  const n = normalizePhoneTo08(phone);
+  if (!n) return "";
+  return "62" + n.substring(1);
+}
 
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -49,6 +69,16 @@ serve(async (req: Request) => {
         return getStore(supabase, params);
       case "get_store_by_variant_slug":
         return getStoreByVariantSlug(supabase, params);
+      case "submit_order":
+        return submitOrder(supabase, params);
+      case "redeem_points":
+        return redeemPoints(supabase, params);
+      case "sync_branches":
+        return syncBranches(supabase, params);
+      case "sync_promos":
+        return syncPromos(supabase, params);
+      case "get_promos":
+        return getPromos(supabase, params);
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -68,6 +98,7 @@ async function upsertStore(supabase: any, params: any) {
   const {
     store_id, store_name, description, whatsapp, address, open_hours,
     is_active, slug, variant, theme_id, primary_color, dark_color, soft_color,
+    order_types, delivery_fee, pickup_options, payment_methods, member_settings,
   } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
 
@@ -90,11 +121,11 @@ async function upsertStore(supabase: any, params: any) {
     }
   }
 
-  const { error } = await supabase.from("store_settings").upsert({
+  const row: any = {
     store_id,
     store_name: store_name ?? "",
     description: description ?? "",
-    whatsapp: whatsapp ?? "",
+    whatsapp: whatsapp ? normalizePhoneTo08(whatsapp) : "", // WA selalu 08xx
     address: address ?? "",
     open_hours: open_hours ?? "08:00 - 21:00",
     is_active: is_active ?? false,
@@ -105,7 +136,15 @@ async function upsertStore(supabase: any, params: any) {
     dark_color: dark_color ?? "",
     soft_color: soft_color ?? "",
     updated_at: new Date().toISOString(),
-  }, { onConflict: "store_id" });
+  };
+  // Kolom ekstra (C1) — hanya ditulis bila dikirim (JSON string dari app).
+  if (order_types !== undefined) row.order_types = order_types;
+  if (delivery_fee !== undefined) row.delivery_fee = Number(delivery_fee) || 0;
+  if (pickup_options !== undefined) row.pickup_options = pickup_options;
+  if (payment_methods !== undefined) row.payment_methods = payment_methods;
+  if (member_settings !== undefined) row.member_settings = member_settings;
+
+  const { error } = await supabase.from("store_settings").upsert(row, { onConflict: "store_id" });
 
   if (error) return jsonResponse({ error: error.message }, 500);
   return jsonResponse({ ok: true });
@@ -143,6 +182,7 @@ async function syncProducts(supabase: any, params: any) {
     name: p.name,
     category: p.category ?? "Lainnya",
     price: p.price,
+    original_price: p.original_price ?? null,
     stock: p.stock ?? 0,
     image_url: p.image ?? "",
     description: p.description ?? "",
@@ -151,10 +191,6 @@ async function syncProducts(supabase: any, params: any) {
   }));
 
   // Delete old products, then insert new batch (clean sync).
-  // Pakai .insert() BUKAN upsert(onConflict): online_products awalnya tidak
-  // punya unique index → upsert dengan onConflict gagal 500 setelah delete.
-  // Unique index idx_op_store_product (migrasi 0011) sudah ada sekarang,
-  // dan .insert() aman karena tabel sudah kosong per store_id.
   const { error: delErr } = await supabase
     .from("online_products")
     .delete()
@@ -197,6 +233,14 @@ async function getOrders(supabase: any, params: any) {
 }
 
 // ─── Update order status (state machine) ───────────────────────────
+// Status baru (v2.2.23):
+//   "Menunggu Verifikasi Pembeli" → [Online Baru, Dibatalkan]   (non-tunai: kasir cek bukti)
+//   "Online Baru"                 → [Disiapkan, Dibatalkan]
+//   "Disiapkan"                   → [Siap Diambil, Dibatalkan]
+//   "Siap Diambil"                → [Lunas, Dibatalkan]
+//   "Lunas"                       → [Direfund]
+//   "Direfund"                    → []   (terminal)
+//   "Dibatalkan"                  → []
 async function updateOrder(supabase: any, params: any) {
   const { store_id, order_id, status, processed_by } = params;
   if (!store_id || !order_id || !status) {
@@ -205,17 +249,19 @@ async function updateOrder(supabase: any, params: any) {
 
   // Validate state transition
   const validTransitions: Record<string, string[]> = {
+    "Menunggu Verifikasi Pembeli": ["Online Baru", "Dibatalkan"],
     "Online Baru": ["Disiapkan", "Dibatalkan"],
     "Disiapkan": ["Siap Diambil", "Dibatalkan"],
     "Siap Diambil": ["Lunas", "Dibatalkan"],
-    "Lunas": [],
+    "Lunas": ["Direfund"],
+    "Direfund": [],
     "Dibatalkan": [],
   };
 
   // Get current status
   const { data: existing } = await supabase
     .from("online_orders")
-    .select("status")
+    .select("status, used_points, customer_phone, store_id")
     .eq("id", order_id)
     .eq("store_id", store_id)
     .single();
@@ -239,6 +285,11 @@ async function updateOrder(supabase: any, params: any) {
     updates.processed_by = processed_by;
   }
 
+  // Lunas: akumulasi poin + total_spent ke online_customers (GAS pattern).
+  if (status === "Lunas" && (existing.used_points > 0 || existing.customer_phone)) {
+    await applyOrderToCustomer(supabase, store_id, existing, params);
+  }
+
   const { error } = await supabase
     .from("online_orders")
     .update(updates)
@@ -248,6 +299,315 @@ async function updateOrder(supabase: any, params: any) {
   if (error) return jsonResponse({ error: error.message }, 500);
 
   return jsonResponse({ ok: true, status });
+}
+
+// Akumulasi ke online_customers saat Lunas: total_spent, poin earned,
+// referral reward untuk referrer, promo history. Di-call dari update_order
+// (kasir konfirmasi Lunas) — order sudah final.
+async function applyOrderToCustomer(supabase: any, storeId: string, order: any, params: any) {
+  try {
+    const phone = normalizePhoneTo08(order.customer_phone);
+    if (!phone) return;
+
+    // Ambil store settings (member_settings: poin rate + referral).
+    const { data: store } = await supabase
+      .from("store_settings")
+      .select("store_id, member_settings")
+      .eq("store_id", storeId)
+      .maybeSingle();
+    let member = { pointEarnPercent: 0, referralRewardType: "nominal", referralRewardValue: 0 };
+    try {
+      member = { ...member, ...(JSON.parse(store?.member_settings ?? "{}")) };
+    } catch (_) {}
+
+    // Order detail (used_points, promo) sudah di kolom online_orders.
+    const { data: ord } = await supabase
+      .from("online_orders")
+      .select("id, total, used_points, used_promo_id, promo_discount, referred_by, customer_name")
+      .eq("id", order.id)
+      .single();
+    if (!ord) return;
+
+    const total = Number(ord.total) || 0;
+    const usedPoints = Number(ord.used_points) || 0;
+    const earned = Math.floor(total * (Number(member.pointEarnPercent) || 0) / 100);
+
+    // Upsert customer by (store_id, phone) — anti-dobel: update nama & akumulasi.
+    const { data: existing } = await supabase
+      .from("online_customers")
+      .select("id, points, total_spent, promo_history")
+      .eq("store_id", storeId)
+      .eq("phone", phone)
+      .maybeSingle();
+
+    if (existing) {
+      const history = Array.isArray(existing.promo_history) ? existing.promo_history : [];
+      if (ord.used_promo_id && !history.some((h: any) => h.promo_id === ord.used_promo_id)) {
+        history.push({ promo_id: ord.used_promo_id, used_at: new Date().toISOString() });
+      }
+      await supabase
+        .from("online_customers")
+        .update({
+          name: ord.customer_name || existing.name,
+          points: (existing.points || 0) + earned - usedPoints,
+          total_spent: (existing.total_spent || 0) + total,
+          promo_history: history,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id);
+    } else {
+      const history = ord.used_promo_id ? [{ promo_id: ord.used_promo_id, used_at: new Date().toISOString() }] : [];
+      const { data: newCust } = await supabase
+        .from("online_customers")
+        .insert({
+          store_id: storeId,
+          name: ord.customer_name || "Pelanggan",
+          phone,
+          total_spent: total,
+          points: earned - usedPoints,
+          promo_history: history,
+          referred_by: normalizePhoneTo08(ord.referred_by || ""),
+        })
+        .select("id, referred_by")
+        .single();
+
+      // Ajak teman: reward referrer HANYA untuk customer BARU (GAS pattern).
+      const refPhone = normalizePhoneTo08(ord.referred_by || "");
+      if (newCust && refPhone && refPhone !== phone) {
+        let refPts = 0;
+        if (member.referralRewardType === "persen") {
+          refPts = Math.floor(total * (Number(member.referralRewardValue) || 0) / 100);
+        } else {
+          refPts = Number(member.referralRewardValue) || 0;
+        }
+        if (refPts > 0) {
+          const { data: ref } = await supabase
+            .from("online_customers")
+            .select("id, points")
+            .eq("store_id", storeId)
+            .eq("phone", refPhone)
+            .maybeSingle();
+          if (ref) {
+            await supabase
+              .from("online_customers")
+              .update({ points: (ref.points || 0) + refPts })
+              .eq("id", ref.id);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[applyOrderToCustomer] failed (non-blocking):", e.message);
+  }
+}
+
+// ─── Submit order (web storefront / direct) ─────────────────────────
+// Non-tunai → status "Menunggu Verifikasi Pembeli" (kasir cek bukti dulu).
+// Tunai → "Online Baru". WA dinormalisasi 08xx; customer anti-dobel.
+async function submitOrder(supabase: any, params: any) {
+  const {
+    store_id, customer_name, customer_phone, items, subtotal, discount,
+    promo_code, handling_fee, total, payment_method, pickup_time, branch,
+    notes, order_type, used_points, used_promo_id, promo_discount, referred_by,
+  } = params;
+  if (!store_id || !customer_phone || !items || !Array.isArray(items)) {
+    return jsonResponse({ error: "store_id, customer_phone, items required" }, 400);
+  }
+
+  const phone = normalizePhoneTo08(customer_phone);
+  if (!phone) return jsonResponse({ error: "Nomor WhatsApp tidak valid" }, 400);
+
+  const invoice = `ONL-${new Date().toISOString().replace(/[-:T]/g, "").slice(2, 14)}`;
+  const isTunai = String(payment_method || "").toLowerCase().includes("tunai");
+  // GAS initStatus: tunai → "Online Baru"; non-tunai → "Menunggu Verifikasi Pembeli".
+  const initStatus = isTunai ? "Online Baru" : "Menunggu Verifikasi Pembeli";
+
+  const { error } = await supabase.from("online_orders").insert({
+    store_id,
+    invoice,
+    customer_name: customer_name ?? "Pelanggan",
+    customer_phone: phone,
+    items,
+    subtotal: Number(subtotal) || 0,
+    discount: Number(discount) || 0,
+    promo_code: promo_code ?? "",
+    handling_fee: Number(handling_fee) || 0,
+    total: Number(total) || 0,
+    payment_method: payment_method ?? "Tunai",
+    pickup_time: pickup_time ?? "Segera",
+    branch: branch ?? "Pusat",
+    notes: notes ?? "",
+    order_type: order_type ?? "",
+    used_points: Number(used_points) || 0,
+    used_promo_id: used_promo_id ?? null,
+    promo_discount: Number(promo_discount) || 0,
+    status: initStatus,
+  });
+
+  if (error) return jsonResponse({ error: error.message }, 500);
+
+  // Anti-dobel customer: lookup by (store_id, phone ternormalisasi) →
+  // update nama + akumulasi, BUKAN insert baru ("Adi"/"adi" = 1 pelanggan).
+  try {
+    const { data: existing } = await supabase
+      .from("online_customers")
+      .select("id")
+      .eq("store_id", store_id)
+      .eq("phone", phone)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from("online_customers")
+        .update({ name: customer_name ?? "", updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+    } else {
+      await supabase.from("online_customers").insert({
+        store_id,
+        name: customer_name ?? "Pelanggan",
+        phone,
+        referred_by: normalizePhoneTo08(referred_by || ""),
+      });
+    }
+  } catch (e) {
+    console.warn("[submitOrder] customer upsert failed (non-blocking):", e.message);
+  }
+
+  // WA link tujuan: store.whatsapp (08xx → 62xx).
+  const { data: store } = await supabase
+    .from("store_settings")
+    .select("store_name, whatsapp")
+    .eq("store_id", store_id)
+    .maybeSingle();
+  const storeWa = formatWA(store?.whatsapp || "");
+  const storeName = store?.store_name || "Toko";
+
+  const itemsText = items.map((i: any) => `• ${i.name} x${i.qty} — ${formatRupiah(i.subtotal ?? i.price * i.qty)}`).join("\n");
+  const waMessage = encodeURIComponent(
+    `🛒 *Pesanan Baru — ${storeName}*\n\n` +
+    `📋 *${invoice}*\n` +
+    `👤 ${customer_name}\n` +
+    `📱 ${phone}\n` +
+    `🏪 ${branch ?? "Pusat"}\n` +
+    `💳 ${payment_method}\n` +
+    `🕐 ${pickup_time ?? "Segera"}\n\n` +
+    `*Item:*\n${itemsText}\n\n` +
+    `💰 *Total: ${formatRupiah(Number(total) || 0)}*\n\n` +
+    `_Catatan: ${notes || "-"}_`
+  );
+
+  return jsonResponse({
+    ok: true,
+    invoice,
+    status: initStatus,
+    whatsappUrl: storeWa ? `https://wa.me/${storeWa}?text=${waMessage}` : "",
+  });
+}
+
+// ─── Redeem points (tukar poin member) ──────────────────────────────
+async function redeemPoints(supabase: any, params: any) {
+  const { store_id, phone, points } = params;
+  if (!store_id || !phone || !points || Number(points) <= 0) {
+    return jsonResponse({ error: "store_id, phone, points required" }, 400);
+  }
+  const p = normalizePhoneTo08(phone);
+  const pts = Number(points);
+
+  const { data: cust, error } = await supabase
+    .from("online_customers")
+    .select("id, points")
+    .eq("store_id", store_id)
+    .eq("phone", p)
+    .maybeSingle();
+  if (error) return jsonResponse({ error: error.message }, 500);
+  if (!cust) return jsonResponse({ error: "Customer not found" }, 404);
+  if ((cust.points || 0) < pts) {
+    return jsonResponse({ error: "Poin tidak cukup", available: cust.points }, 400);
+  }
+
+  const { error: upErr } = await supabase
+    .from("online_customers")
+    .update({ points: (cust.points || 0) - pts, updated_at: new Date().toISOString() })
+    .eq("id", cust.id);
+  if (upErr) return jsonResponse({ error: upErr.message }, 500);
+
+  return jsonResponse({ ok: true, points_left: (cust.points || 0) - pts });
+}
+
+// ─── Sync branches (cabang toko online + WA per cabang) ─────────────
+async function syncBranches(supabase: any, params: any) {
+  const { store_id, branches } = params;
+  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  if (!branches || !Array.isArray(branches)) {
+    return jsonResponse({ error: "branches array required" }, 400);
+  }
+
+  const { error: delErr } = await supabase
+    .from("branches")
+    .delete()
+    .eq("store_id", store_id);
+  if (delErr) return jsonResponse({ error: delErr.message }, 500);
+
+  if (branches.length > 0) {
+    const rows = branches.map((b: any, i: number) => ({
+      store_id,
+      name: b.name ?? "",
+      phone: normalizePhoneTo08(b.phone || ""),
+      is_active: b.is_active ?? true,
+      sort: i,
+    }));
+    const { error: insErr } = await supabase.from("branches").insert(rows);
+    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+  }
+
+  return jsonResponse({ ok: true, count: branches.length });
+}
+
+// ─── Sync promos (kupon online) ─────────────────────────────────────
+async function syncPromos(supabase: any, params: any) {
+  const { store_id, promos } = params;
+  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  if (!promos || !Array.isArray(promos)) {
+    return jsonResponse({ error: "promos array required" }, 400);
+  }
+
+  const { error: delErr } = await supabase
+    .from("promos")
+    .delete()
+    .eq("store_id", store_id);
+  if (delErr) return jsonResponse({ error: delErr.message }, 500);
+
+  if (promos.length > 0) {
+    const rows = promos.map((p: any) => ({
+      store_id,
+      code: p.code ?? "",
+      title: p.title ?? p.code ?? "",
+      type: p.type ?? "persen", // persen | nominal
+      value: Number(p.value) || 0,
+      min_spend: Number(p.min_spend) || 0,
+      quota: Number(p.quota) ?? null,
+      limit_per_user: Number(p.limit_per_user) ?? null,
+      start_date: p.start_date ?? null,
+      end_date: p.end_date ?? null,
+      is_active: p.is_active ?? true,
+    }));
+    const { error: insErr } = await supabase.from("promos").insert(rows);
+    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+  }
+
+  return jsonResponse({ ok: true, count: promos.length });
+}
+
+// ─── Get promos (admin app read-back untuk CRUD kupon) ────────────
+async function getPromos(supabase: any, params: any) {
+  const { store_id } = params;
+  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  const { data, error } = await supabase
+    .from("promos")
+    .select("*")
+    .eq("store_id", store_id)
+    .order("created_at", { ascending: false });
+  if (error) return jsonResponse({ error: error.message }, 500);
+  return jsonResponse({ promos: data ?? [] });
 }
 
 // ─── Get store settings (admin app) ────────────────────────────
@@ -289,6 +649,10 @@ async function getStoreByVariantSlug(supabase: any, params: any) {
   if (!data) return jsonResponse({ error: "Store not found or inactive" }, 404);
 
   return jsonResponse({ store: data });
+}
+
+function formatRupiah(n: number): string {
+  return `Rp ${(n || 0).toLocaleString("id-ID")}`;
 }
 
 function jsonResponse(body: any, status = 200) {

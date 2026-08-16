@@ -13,6 +13,22 @@ function requireSupabase() {
   return client;
 }
 
+// ─── WA normalize (adaptasi GAS normalizePhoneTo08 + formatWA) ──────
+// Simpan selalu bentuk 08xx (strip non-digit, 62→0, 8→08).
+export function normalizePhoneTo08(phone: string): string {
+  if (!phone) return "";
+  const clean = phone.replace(/[^0-9]/g, "");
+  if (clean.startsWith("62")) return "0" + clean.substring(2);
+  if (clean.startsWith("8")) return "0" + clean;
+  return clean;
+}
+// wa.me butuh 62xx — 08xx → 62xx.
+export function formatWA(phone: string): string {
+  const n = normalizePhoneTo08(phone);
+  if (!n) return "";
+  return "62" + n.substring(1);
+}
+
 // ─── Data types ─────────────────────────────────────────────────────
 export interface StoreSettings {
   store_id: string;
@@ -24,13 +40,18 @@ export interface StoreSettings {
   address: string;
   open_hours: string;
   is_active: boolean;
-  // Batch #9: slug + variant + tema (warna ikut aplikasi)
   slug?: string;
   variant?: string;
   theme_id?: string;
   primary_color?: string;
   dark_color?: string;
   soft_color?: string;
+  // Rilis besar v2.2.23 (C1):
+  order_types?: string;      // JSON: [{name,is_active}]
+  delivery_fee?: number;
+  pickup_options?: string;   // JSON: [{time,is_active}]
+  payment_methods?: string;  // JSON: [{name,type,details,qr,handling_fee,is_active}]
+  member_settings?: string;  // JSON: {pointEarnPercent,pointExchangeRate,minRedeem,referralRewardType,referralRewardValue}
 }
 
 export interface OnlineProduct {
@@ -72,6 +93,46 @@ export interface OnlineOrder {
   notes: string;
   status: string;
   created_at: string;
+  // v2.2.23:
+  order_type?: string;
+  used_points?: number;
+  promo_discount?: number;
+}
+
+export interface OnlineCustomer {
+  id: number;
+  store_id: string;
+  name: string;
+  phone: string; // 08xx
+  total_spent: number;
+  points: number;
+  level: string;
+  promo_history: any[];
+  created_at: string;
+}
+
+export interface Promo {
+  id: number;
+  store_id: string;
+  code: string;
+  title: string;
+  type: string; // persen | nominal
+  value: number;
+  min_spend: number;
+  quota: number | null;
+  limit_per_user: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  is_active: boolean;
+}
+
+export interface Branch {
+  id: number;
+  store_id: string;
+  name: string;
+  phone: string;
+  is_active: boolean;
+  sort: number;
 }
 
 // ─── API helpers ────────────────────────────────────────────────────
@@ -170,129 +231,166 @@ export async function getProducts(
   return (data as OnlineProduct[]) ?? [];
 }
 
+// ─── Store config (order types, pickup, payment methods, branches) ──
+function parseJson<T>(raw: string | undefined | null, fallback: T): T {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw) as T; } catch { return fallback; }
+}
+
+export interface PaymentMethod {
+  name: string;
+  type: string; // tunai | bank | qris | ewallet
+  details?: string;
+  qr?: string;
+  handling_fee?: number;
+  is_active?: boolean;
+}
+
+export function getPaymentMethods(store: StoreSettings): PaymentMethod[] {
+  const list = parseJson<PaymentMethod[]>(store.payment_methods, []);
+  if (list.length === 0) {
+    // Fallback default bila pemilik belum atur: Tunai + QRIS + Transfer.
+    return [
+      { name: "Tunai", type: "tunai", handling_fee: 0, is_active: true },
+      { name: "QRIS", type: "qris", handling_fee: 0, is_active: true },
+      { name: "Transfer", type: "bank", handling_fee: 0, is_active: true },
+    ];
+  }
+  return list.filter((m) => m.is_active !== false);
+}
+
+export function getOrderTypes(store: StoreSettings): string[] {
+  const list = parseJson<{ name: string; is_active?: boolean }[]>(store.order_types, []);
+  if (list.length === 0) return ["Ambil Sendiri", "Delivery"];
+  return list.filter((t) => t.is_active !== false).map((t) => t.name);
+}
+
+export function getPickupOptions(store: StoreSettings): string[] {
+  const list = parseJson<{ time: string; is_active?: boolean }[]>(store.pickup_options, []);
+  if (list.length === 0) return ["Segera", "15 Menit", "30 Menit", "1 Jam"];
+  return list.filter((t) => t.is_active !== false).map((t) => t.time);
+}
+
+export function getMemberSettings(store: StoreSettings | undefined | null) {
+  return parseJson<{
+    pointEarnPercent?: number;
+    pointExchangeRate?: number; // Rp per poin
+    minRedeem?: number;         // poin minimum untuk tukar
+    referralRewardType?: string;
+    referralRewardValue?: number;
+  }>(store?.member_settings, {});
+}
+
+export async function getBranches(storeId: string): Promise<Branch[]> {
+  const supabase = requireSupabase();
+  const { data } = await supabase
+    .from("branches")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("is_active", true)
+    .order("sort", { ascending: true });
+  return (data as Branch[]) ?? [];
+}
+
+export async function getPromos(storeId: string): Promise<Promo[]> {
+  const supabase = requireSupabase();
+  const now = new Date().toISOString();
+  let query = supabase
+    .from("promos")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("is_active", true)
+    .or(`end_date.is.null,end_date.gte.${now}`)
+    .order("created_at", { ascending: false });
+  const { data } = await query;
+  return (data as Promo[]) ?? [];
+}
+
+// ─── Customer / member ──────────────────────────────────────────────
+export async function getCustomer(
+  storeId: string,
+  phone: string
+): Promise<OnlineCustomer | null> {
+  const supabase = requireSupabase();
+  const p = normalizePhoneTo08(phone);
+  if (!p) return null;
+  const { data } = await supabase
+    .from("online_customers")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("phone", p)
+    .maybeSingle();
+  return (data as OnlineCustomer) ?? null;
+}
+
+// ─── Submit order (via edge function — WA normalize + anti-dobel) ───
 export interface SubmitOrderResult {
   invoice: string;
   whatsappUrl: string;
+  status: string;
+}
+
+export interface SubmitOrderInput {
+  customerName: string;
+  customerPhone: string;
+  items: CartItem[];
+  subtotal: number;
+  discount: number;
+  promoCode: string;
+  handlingFee: number;
+  total: number;
+  paymentMethod: string;
+  pickupTime: string;
+  branch: string;
+  notes: string;
+  orderType: string;
+  usedPoints: number;
+  usedPromoId?: number | null;
+  promoDiscount: number;
+  referredBy?: string;
 }
 
 export async function submitOrder(
   storeId: string,
-  order: {
-    customerName: string;
-    customerPhone: string;
-    items: CartItem[];
-    subtotal: number;
-    discount: number;
-    promoCode: string;
-    handlingFee: number;
-    total: number;
-    paymentMethod: string;
-    pickupTime: string;
-    branch: string;
-    notes: string;
-  }
+  order: SubmitOrderInput
 ): Promise<SubmitOrderResult | null> {
   const supabase = requireSupabase();
-  const invoice = `ONL-${new Date()
-    .toISOString()
-    .replace(/[-:T]/g, "")
-    .slice(2, 14)}`;
-
-  // 1. Insert order
-  const { error } = await supabase.from("online_orders").insert({
-    store_id: storeId,
-    invoice,
-    customer_name: order.customerName,
-    customer_phone: order.customerPhone,
-    items: order.items,
-    subtotal: order.subtotal,
-    discount: order.discount,
-    promo_code: order.promoCode,
-    handling_fee: order.handlingFee,
-    total: order.total,
-    payment_method: order.paymentMethod,
-    pickup_time: order.pickupTime,
-    branch: order.branch,
-    notes: order.notes,
-    status: "Online Baru",
-  });
-
-  if (error) throw new Error(error.message);
-
-  // 2. Auto-register customer (upsert by phone)
-  if (order.customerName && order.customerPhone) {
-    try {
-      // Check if customer already exists by phone
-      const { data: existing } = await supabase
-        .from("customers")
-        .select("id, total_spent, points")
-        .eq("store_id", storeId)
-        .eq("phone", order.customerPhone)
-        .single();
-
-      const newTotal = (existing?.total_spent ?? 0) + order.total;
-      const newPoints = Math.floor(newTotal / 10000); // 1 poin per Rp 10.000
-      let level = "Silver";
-      if (newPoints >= 5000) level = "Platinum";
-      else if (newPoints >= 1000) level = "Gold";
-
-      if (existing) {
-        await supabase
-          .from("customers")
-          .update({
-            name: order.customerName,
-            total_spent: newTotal,
-            points: newPoints,
-            level,
-          })
-          .eq("id", existing.id);
-      } else {
-        await supabase.from("customers").insert({
-          store_id: storeId,
-          name: order.customerName,
-          phone: order.customerPhone,
-          total_spent: order.total,
-          points: Math.floor(order.total / 10000),
-          level: "Silver",
-        });
-      }
-    } catch (e) {
-      // Customer registration is non-blocking — order already saved
-      console.warn("[submitOrder] customer auto-register failed:", e);
-    }
+  try {
+    const res = await supabase.functions.invoke("online-store", {
+      body: {
+        action: "submit_order",
+        store_id: storeId,
+        customer_name: order.customerName,
+        customer_phone: order.customerPhone,
+        items: order.items,
+        subtotal: order.subtotal,
+        discount: order.discount,
+        promo_code: order.promoCode,
+        handling_fee: order.handlingFee,
+        total: order.total,
+        payment_method: order.paymentMethod,
+        pickup_time: order.pickupTime,
+        branch: order.branch,
+        notes: order.notes,
+        order_type: order.orderType,
+        used_points: order.usedPoints,
+        used_promo_id: order.usedPromoId ?? null,
+        promo_discount: order.promoDiscount,
+        referred_by: order.referredBy ?? "",
+      },
+    });
+    if (res.error) throw new Error(res.error.message || "Gagal submit");
+    const data = res.data as any;
+    return {
+      invoice: data.invoice,
+      whatsappUrl: data.whatsappUrl ?? "",
+      status: data.status ?? "Online Baru",
+    };
+  } catch (e: any) {
+    // Fallback ke insert langsung (anon key punya RLS anon insert online_orders?)
+    // — edge function adalah jalur utama; kalau gagal lempar ke caller.
+    throw new Error(e.message || "Gagal submit pesanan");
   }
-
-  // 3. Build WhatsApp notification URL
-  const { data: store } = await supabase
-    .from("store_settings")
-    .select("store_name, whatsapp")
-    .eq("store_id", storeId)
-    .single();
-
-  const storeWhatsapp = store?.whatsapp || order.customerPhone;
-  const storeName = store?.store_name || "Toko";
-
-  const itemsText = order.items
-    .map((i) => `• ${i.name} x${i.qty} — ${formatRupiah(i.subtotal)}`)
-    .join("\n");
-
-  const waMessage = encodeURIComponent(
-    `🛒 *Pesanan Baru — ${storeName}*\n\n` +
-    `📋 *${invoice}*\n` +
-    `👤 ${order.customerName}\n` +
-    `📱 ${order.customerPhone}\n` +
-    `🏪 ${order.branch}\n` +
-    `💳 ${order.paymentMethod}\n` +
-    `🕐 ${order.pickupTime}\n\n` +
-    `*Item:*\n${itemsText}\n\n` +
-    `💰 *Total: ${formatRupiah(order.total)}*\n\n` +
-    `_Catatan: ${order.notes || "-"}_`
-  );
-
-  return {
-    invoice,
-    whatsappUrl: `https://wa.me/${storeWhatsapp.replace(/\D/g, "")}?text=${waMessage}`,
-  };
 }
 
 export async function getOrders(
@@ -300,11 +398,13 @@ export async function getOrders(
   phone: string
 ): Promise<OnlineOrder[]> {
   const supabase = requireSupabase();
+  const p = normalizePhoneTo08(phone);
+  if (!p) return [];
   const { data } = await supabase
     .from("online_orders")
     .select("*")
     .eq("store_id", storeId)
-    .eq("customer_phone", phone)
+    .eq("customer_phone", p)
     .order("created_at", { ascending: false })
     .limit(30);
 
@@ -317,12 +417,14 @@ export async function cancelOrder(
   phone: string
 ): Promise<boolean> {
   const supabase = requireSupabase();
+  const p = normalizePhoneTo08(phone);
+  if (!p) return false;
   const { error } = await supabase
     .from("online_orders")
     .update({ status: "Dibatalkan" })
     .eq("id", orderId)
     .eq("store_id", storeId)
-    .eq("customer_phone", phone)
+    .eq("customer_phone", p)
     .eq("status", "Online Baru");
 
   return !error;
@@ -330,19 +432,23 @@ export async function cancelOrder(
 
 // ─── Formatting ─────────────────────────────────────────────────────
 export function formatRupiah(n: number): string {
-  return `Rp ${n.toLocaleString("id-ID")}`;
+  return `Rp ${(n || 0).toLocaleString("id-ID")}`;
 }
 
 export function statusColor(status: string): string {
   switch (status) {
     case "Online Baru":
       return "text-amber-600 bg-amber-50";
+    case "Menunggu Verifikasi Pembeli":
+      return "text-orange-600 bg-orange-50";
     case "Disiapkan":
       return "text-green-600 bg-green-50";
     case "Siap Diambil":
       return "text-purple-600 bg-purple-50";
     case "Lunas":
       return "text-emerald-700 bg-emerald-50";
+    case "Direfund":
+      return "text-gray-500 bg-gray-100";
     case "Dibatalkan":
       return "text-red-600 bg-red-50";
     default:

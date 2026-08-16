@@ -4,7 +4,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getStoreByVariantSlugOrLegacy, getProducts, submitOrder, formatRupiah,
   CartItem, OnlineProduct, StoreSettings, getOrders, cancelOrder,
-  OnlineOrder, SubmitOrderResult, getStoreTheme,
+  OnlineOrder, getStoreTheme, normalizePhoneTo08, getPaymentMethods,
+  getOrderTypes, getPickupOptions, getMemberSettings, getBranches, getPromos,
+  getCustomer, PaymentMethod, SubmitOrderInput, Promo, Branch, OnlineCustomer,
+  formatWA,
 } from "@/lib/supabase";
 import ProductCard from "@/components/ProductCard";
 
@@ -22,6 +25,17 @@ function loadOrds(): OnlineOrder[] {
 }
 function saveOrds(ords: OnlineOrder[]) {
   try { localStorage.setItem(ORD_KEY, JSON.stringify(ords)); } catch {}
+}
+
+// ── Profil tersimpan otomatis (tanpa Google Client ID — pilihan user) ──
+// Pembeli isi nama + WA sekali → localStorage nusa_online_profile →
+// kunjungan berikut langsung terisi; "ganti profil" untuk edit ulang.
+const PROFILE_KEY = "nusa_online_profile";
+function loadProfile(): { name: string; phone: string } {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || '{"name":"","phone":""}'); } catch { return { name: "", phone: "" }; }
+}
+function saveProfile(name: string, phone: string) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify({ name, phone })); } catch {}
 }
 
 export default function StorePage({ params }: { params: { variant: string; slug: string } }) {
@@ -43,8 +57,27 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   /* checkout */
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
-  const [payment, setPayment] = useState("Tunai");
+  const [payment, setPayment] = useState<PaymentMethod | null>(null);
+  const [orderType, setOrderType] = useState("Ambil Sendiri");
+  const [pickupTime, setPickupTime] = useState("Segera");
+  const [branch, setBranch] = useState<string>("");
+  const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  /* promo + poin */
+  const [promoCode, setPromoCode] = useState("");
+  const [promo, setPromo] = useState<Promo | null>(null);
+  const [promoErr, setPromoErr] = useState("");
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [customer, setCustomer] = useState<OnlineCustomer | null>(null);
+  const [usePoints, setUsePoints] = useState(false);
+  const [pointsError, setPointsError] = useState("");
+
+  /* config */
+  const [payMethods, setPayMethods] = useState<PaymentMethod[]>([]);
+  const [orderTypes, setOrderTypes] = useState<string[]>(["Ambil Sendiri", "Delivery"]);
+  const [pickupOptions, setPickupOptions] = useState<string[]>(["Segera"]);
+  const [branches, setBranches] = useState<Branch[]>([]);
 
   /* success */
   const [lastInv, setLastInv] = useState("");
@@ -63,22 +96,61 @@ export default function StorePage({ params }: { params: { variant: string; slug:
 
   useEffect(() => { setFavIds(loadFavs()); }, []);
 
+  // Referral: ?ref=<phone> → dipakai sekali untuk order pertama customer baru.
+  const refPhone = useRef("");
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      refPhone.current = normalizePhoneTo08(q.get("ref") || "");
+    } catch {}
+  }, []);
+
+  // Load store + config + auto-fill profil tersimpan.
   useEffect(() => {
     if (!variant || !slug) return;
     getStoreByVariantSlugOrLegacy(variant, slug).then((s) => {
       if (!s) { setLoading(false); return; }
       setStore(s);
+      setPayMethods(getPaymentMethods(s));
+      setOrderTypes(getOrderTypes(s));
+      setPickupOptions(getPickupOptions(s));
+      setPayment(getPaymentMethods(s)[0] ?? null);
+      setOrderType(getOrderTypes(s)[0] ?? "Ambil Sendiri");
+      setPickupTime(getPickupOptions(s)[0] ?? "Segera");
+      // Profil tersimpan → isi otomatis
+      const prof = loadProfile();
+      if (prof.name) setCustName(prof.name);
+      if (prof.phone) {
+        setCustPhone(prof.phone);
+        setHistPhone(prof.phone);
+      }
       getProducts(s.store_id).then((p) => {
         setProducts(p ?? []);
         const cats = Array.from(new Set((p ?? []).map((x) => x.category).filter(Boolean))) as string[];
         setCategories(["Semua", ...cats]);
         setLoading(false);
       });
+      getBranches(s.store_id).then((b) => {
+        setBranches(b ?? []);
+        if ((b ?? []).length > 0) setBranch((b ?? [])[0].name);
+      });
+      getPromos(s.store_id).then((pr) => setPromos(pr ?? []));
+      // Load member kalau nomor sudah tersimpan
+      if (prof.phone) {
+        getCustomer(s.store_id, prof.phone).then((c) => setCustomer(c));
+      }
     });
   }, [variant, slug]);
 
   const theme = getStoreTheme(store);
   const isOpen = store?.is_active ?? false;
+
+  /* ── member settings ── */
+  const member = getMemberSettings(store ?? undefined);
+  const pointEarnPercent = member.pointEarnPercent ?? 0;
+  const pointRate = member.pointExchangeRate ?? 1000; // Rp per poin saat tukar
+  const minRedeem = member.minRedeem ?? 500;
+  const pointsWorth = Math.floor((customer?.points ?? 0) * (pointRate || 1));
 
   /* ── cart helpers ── */
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0);
@@ -100,7 +172,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
     }).filter(Boolean) as CartItem[]);
   };
 
-  const clearCart = () => setCart([]);
+  const clearCart = () => { setCart([]); setPromo(null); setPromoCode(""); setUsePoints(false); setPointsError(""); };
 
   const toggleFav = useCallback((pid: number) => {
     setFavIds((prev) => {
@@ -110,20 +182,75 @@ export default function StorePage({ params }: { params: { variant: string; slug:
     });
   }, []);
 
+  /* ── promo validation (quota, periode, minSpend, limitPerUser) ── */
+  const applyPromo = (code: string) => {
+    setPromoCode(code);
+    setPromoErr("");
+    const c = code.trim().toLowerCase();
+    if (!c) { setPromo(null); return; }
+    const found = promos.find((p) => p.code.toLowerCase() === c);
+    if (!found) { setPromo(null); setPromoErr("Kode promo tidak ditemukan"); return; }
+    if (found.quota != null && found.quota <= 0) { setPromo(null); setPromoErr("Kuota promo habis"); return; }
+    if (found.start_date && new Date(found.start_date) > new Date()) { setPromo(null); setPromoErr("Promo belum mulai"); return; }
+    if (found.end_date && new Date(found.end_date) < new Date()) { setPromo(null); setPromoErr("Promo sudah berakhir"); return; }
+    if (cartTotal < found.min_spend) { setPromo(null); setPromoErr(`Min. belanja ${formatRupiah(found.min_spend)}`); return; }
+    if (customer && found.limit_per_user) {
+      const used = (customer.promo_history ?? []).filter((h) => h.promo_id === found.id).length;
+      if (used >= found.limit_per_user) { setPromo(null); setPromoErr("Kode sudah dipakai limit Anda"); return; }
+    }
+    setPromo(found);
+  };
+
+  const promoDiscount = promo
+    ? promo.type === "persen"
+      ? Math.floor(cartTotal * promo.value / 100)
+      : Math.min(promo.value, cartTotal)
+    : 0;
+
+  /* ── poin ── */
+  const redeemable = Math.min(
+    Math.floor((customer?.points ?? 0)),
+    pointsWorth >= minRedeem ? Math.floor(cartTotal / (pointRate || 1)) : 0
+  );
+  const usedPointsVal = usePoints ? Math.max(0, redeemable) : 0;
+  const pointsDiscount = usedPointsVal * (pointRate || 1);
+
+  /* ── delivery ongkir ── */
+  const deliveryFee = orderType === "Delivery" ? (store?.delivery_fee ?? 0) : 0;
+  const handlingFee = payment?.handling_fee ?? 0;
+  const grandTotal = Math.max(0, cartTotal - promoDiscount - pointsDiscount + deliveryFee + handlingFee);
+
   /* ── order ── */
   const handleSubmit = async () => {
     if (!custName.trim()) return alert("Nama wajib diisi");
-    if (!custPhone.trim()) return alert("Nomor WhatsApp wajib diisi");
+    const normPhone = normalizePhoneTo08(custPhone);
+    if (!normPhone) return alert("Nomor WhatsApp wajib diisi");
     if (cart.length === 0) return alert("Keranjang kosong");
+    if (branches.length > 0 && !branch) return alert("Pilih cabang dulu");
+    // Simpan profil otomatis
+    saveProfile(custName.trim(), normPhone);
     setSubmitting(true);
     try {
-      const res: SubmitOrderResult | null = await submitOrder(store!.store_id, {
+      const input: SubmitOrderInput = {
         customerName: custName.trim(),
-        customerPhone: custPhone.trim(),
-        items: cart, subtotal: cartTotal, discount: 0, promoCode: "",
-        handlingFee: 0, total: cartTotal,
-        paymentMethod: payment, pickupTime: "Segera", branch: "Pusat", notes: "",
-      });
+        customerPhone: normPhone,
+        items: cart,
+        subtotal: cartTotal,
+        discount: 0,
+        promoCode: promo?.code ?? "",
+        handlingFee: handlingFee,
+        total: grandTotal,
+        paymentMethod: payment?.name ?? "Tunai",
+        pickupTime: orderType === "Delivery" ? (pickupTime === "Segera" ? "Segera (Delivery)" : pickupTime) : pickupTime,
+        branch: branches.length > 0 ? branch : "Pusat",
+        notes: notes,
+        orderType,
+        usedPoints: usedPointsVal,
+        usedPromoId: promo?.id ?? null,
+        promoDiscount,
+        referredBy: refPhone.current,
+      };
+      const res = await submitOrder(store!.store_id, input);
       setLastInv(res?.invoice ?? "");
       setLastWa(res?.whatsappUrl ?? "");
       clearCart(); setCartOpen(false); setCheckoutView(false); setSuccess(true);
@@ -136,10 +263,11 @@ export default function StorePage({ params }: { params: { variant: string; slug:
 
   /* ── history ── */
   const searchOrders = async () => {
-    if (!histPhone.trim()) return;
+    const p = normalizePhoneTo08(histPhone);
+    if (!p) return;
     setOrdLoading(true);
     try {
-      const data = await getOrders(store!.store_id, histPhone.trim());
+      const data = await getOrders(store!.store_id, p);
       setOrders(data ?? []);
     } catch { alert("Gagal memuat"); }
     setOrdLoading(false);
@@ -147,7 +275,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
 
   const cancelOrd = async (oid: number) => {
     if (!confirm("Yakin batalkan?")) return;
-    await cancelOrder(store!.store_id, oid, histPhone.trim());
+    await cancelOrder(store!.store_id, oid, histPhone);
     searchOrders();
   };
 
@@ -207,7 +335,18 @@ export default function StorePage({ params }: { params: { variant: string; slug:
           </div>
           <h1 className="text-2xl font-extrabold text-text-primary">Pesanan Berhasil!</h1>
           <p className="text-lg font-extrabold mt-1" style={{ color: theme.primary }}>#{lastInv}</p>
-          <p className="text-text-secondary text-sm mt-2">Pesanan Anda sedang diproses.</p>
+          <p className="text-text-secondary text-sm mt-2">
+            {payment?.name && !String(payment?.name).toLowerCase().includes("tunai")
+              ? "Pesanan Anda menunggu verifikasi pembayaran. Kirim bukti via WhatsApp ke toko."
+              : "Pesanan Anda sedang diproses."}
+          </p>
+          {lastWa && (
+            <a href={lastWa} target="_blank" rel="noreferrer"
+              className="block mt-3 text-white rounded-[14px] py-3.5 text-sm font-bold active:opacity-90"
+              style={{ background: `linear-gradient(135deg, #10B981, #059669)` }}>
+              Kirim Bukti via WhatsApp
+            </a>
+          )}
           <div className="flex gap-3 mt-6">
             <button onClick={() => { setSuccess(false); setTab("home"); }} className="flex-1 border-[1.5px] border-divider rounded-[14px] py-3.5 text-sm font-semibold text-text-secondary active:bg-background transition-colors">
               Kembali
@@ -380,6 +519,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                         </div>
                         <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
                           o.status === "Online Baru" ? "bg-info/10 text-info" :
+                          o.status === "Menunggu Verifikasi Pembeli" ? "bg-warning/10 text-warning" :
                           o.status === "Disiapkan" || o.status === "Siap Diambil" ? "bg-warning/10 text-warning" :
                           o.status === "Lunas" ? "bg-success/10 text-success" :
                           "bg-error/10 text-error"
@@ -388,11 +528,11 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                       <div className="flex justify-between items-end">
                         <div>
                           <p className="text-xs text-text-secondary">{new Date(o.created_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}</p>
-                          <p className="text-xs text-text-secondary font-medium mt-0.5">{o.payment_method}</p>
+                          <p className="text-xs text-text-secondary font-medium mt-0.5">{o.payment_method}{o.order_type ? ` · ${o.order_type}` : ""}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-sm font-extrabold" style={{ color: theme.primary }}>{formatRupiah(o.total)}</p>
-                          {o.status === "Online Baru" && (
+                          {(o.status === "Online Baru" || o.status === "Menunggu Verifikasi Pembeli") && (
                             <button onClick={() => cancelOrd(o.id)} className="text-xs text-error font-bold mt-1 hover:underline">Batalkan</button>
                           )}
                         </div>
@@ -508,48 +648,176 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                     /* Checkout form (match Flutter _showCheckoutSheet) */
                     <div className="space-y-3 max-h-[50vh] overflow-y-auto pb-2">
                       <p className="text-lg font-bold text-text-primary">Selesaikan Pembayaran</p>
-                      <p className="text-[32px] font-extrabold tracking-[-1px]" style={{ color: theme.primary }}>{formatRupiah(cartTotal)}</p>
 
+                      {/* Ringkasan total + member */}
+                      <div className="bg-surface rounded-[14px] border border-divider p-3.5">
+                        <p className="text-[32px] font-extrabold tracking-[-1px]" style={{ color: theme.primary }}>{formatRupiah(grandTotal)}</p>
+                        {(promoDiscount > 0 || pointsDiscount > 0 || deliveryFee > 0 || handlingFee > 0) && (
+                          <div className="mt-1.5 space-y-1">
+                            <p className="text-[11px] text-text-tertiary">Subtotal {formatRupiah(cartTotal)}</p>
+                            {promoDiscount > 0 && <p className="text-[11px] text-success">Kupon {promo?.code}: -{formatRupiah(promoDiscount)}</p>}
+                            {pointsDiscount > 0 && <p className="text-[11px] text-success">Poin: -{formatRupiah(pointsDiscount)}</p>}
+                            {deliveryFee > 0 && <p className="text-[11px] text-text-tertiary">Ongkir: +{formatRupiah(deliveryFee)}</p>}
+                            {handlingFee > 0 && <p className="text-[11px] text-text-tertiary">Biaya {payment?.name}: +{formatRupiah(handlingFee)}</p>}
+                          </div>
+                        )}
+                        {/* Profil member */}
+                        {customer && (
+                          <div className="mt-2 pt-2 border-t border-divider">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-text-secondary">Member · {customer.level}</p>
+                              <p className="text-xs font-bold" style={{ color: theme.primary }}>{customer.points} poin</p>
+                            </div>
+                            <div className="mt-1.5 h-1.5 rounded-full bg-divider overflow-hidden">
+                              <div className="h-full rounded-full" style={{ width: `${Math.min(100, (customer.points % 1000) / 10)}%`, background: theme.primary }} />
+                            </div>
+                            {pointEarnPercent > 0 && (
+                              <p className="text-[11px] text-text-tertiary mt-1.5">Dapat {Math.floor(grandTotal * pointEarnPercent / 100)} poin dari pesanan ini</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* DATA PEMESAN + profil tersimpan */}
                       <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">DATA PEMESAN</p>
                       <div className="flex items-center gap-2 bg-input-fill border border-divider rounded-md px-3 h-[50px]">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                        <input value={custName} onChange={(e) => setCustName(e.target.value)} placeholder="Nama Anda" className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-tertiary" />
+                        <input value={custName} onChange={(e) => { setCustName(e.target.value); saveProfile(e.target.value, custPhone); }} placeholder="Nama Anda" className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-tertiary" />
                       </div>
                       <div className="flex items-center gap-2 bg-input-fill border border-divider rounded-md px-3 h-[50px]">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B7280" strokeWidth="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/></svg>
-                        <input value={custPhone} onChange={(e) => setCustPhone(e.target.value)} placeholder="0812-3456-7890" type="tel" className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-tertiary" />
+                        <input value={custPhone} onChange={(e) => { const n = normalizePhoneTo08(e.target.value); setCustPhone(n); saveProfile(custName, n); }} placeholder="0812-3456-7890" type="tel" className="flex-1 bg-transparent outline-none text-sm text-text-primary placeholder:text-text-tertiary" />
+                      </div>
+                      {loadProfile().name && (
+                        <p className="text-[10px] text-text-tertiary -mt-1">Profil tersimpan otomatis — edit untuk ganti</p>
+                      )}
+
+                      {/* TIPE ORDER: Ambil Sendiri / Delivery */}
+                      <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">TIPE PESANAN</p>
+                      <div className="flex gap-2">
+                        {orderTypes.map((t) => (
+                          <button key={t} onClick={() => setOrderType(t)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-[14px] border-2 text-[13px] font-bold transition-all active:scale-95 ${
+                              orderType === t ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-divider bg-surface text-text-secondary"
+                            }`}
+                            style={orderType === t ? { borderColor: theme.primary, background: theme.soft, color: theme.dark } : undefined}>
+                            {t === "Ambil Sendiri" ? "🏪" : "🛵"} {t}
+                          </button>
+                        ))}
                       </div>
 
+                      {/* CABANG (wajib pilih bila toko punya cabang) */}
+                      {branches.length > 0 && (
+                        <>
+                          <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">PILIH CABANG</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {branches.map((b) => (
+                              <button key={b.id} onClick={() => setBranch(b.name)}
+                                className={`flex items-center gap-1.5 px-3 py-3 rounded-[14px] border-2 text-[13px] font-bold transition-all active:scale-95 ${
+                                  branch === b.name ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-divider bg-surface text-text-secondary"
+                                }`}
+                                style={branch === b.name ? { borderColor: theme.primary, background: theme.soft, color: theme.dark } : undefined}>
+                                📍 {b.name}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* JAM: pickup options (ambil) / opsional (delivery) */}
+                      {orderType !== "Delivery" && (
+                        <>
+                          <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">JAM DIAMBIL</p>
+                          <div className="flex flex-wrap gap-2">
+                            {pickupOptions.map((t) => (
+                              <button key={t} onClick={() => setPickupTime(t)}
+                                className={`px-3.5 py-2 rounded-[10px] border text-[12px] font-bold transition-all ${
+                                  pickupTime === t ? "text-white" : "border-divider bg-surface text-text-secondary"
+                                }`}
+                                style={pickupTime === t ? { background: theme.primary } : undefined}>
+                                {t}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {/* METODE PEMBAYARAN — dinamis dari payment_methods */}
                       <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">METODE PEMBAYARAN</p>
                       <div className="flex gap-2">
-                        {["Tunai", "QRIS", "Transfer"].map((m) => {
-                          const icons: Record<string, JSX.Element> = {
-                            Tunai: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><line x1="6" y1="12" x2="6.01" y2="12"/></svg>,
-                            QRIS: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><path d="M14 14h.01M18 14h.01M14 18h.01M18 18h.01"/></svg>,
-                            Transfer: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>,
-                          };
-                          return (
-                            <button
-                              key={m}
-                              onClick={() => setPayment(m)}
-                              className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-[14px] border-2 text-[13px] font-bold transition-all active:scale-95 ${
-                                payment === m ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-divider bg-surface text-text-secondary"
-                              }`}
-                              style={payment === m ? { borderColor: theme.primary, background: theme.soft, color: theme.dark } : undefined}
-                            >
-                              {icons[m]} {m}
-                            </button>
-                          );
-                        })}
+                        {payMethods.map((m) => (
+                          <button key={m.name} onClick={() => setPayment(m)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-[14px] border-2 text-[13px] font-bold transition-all active:scale-95 ${
+                              payment?.name === m.name ? "border-[var(--primary)] bg-[var(--primary-soft)]" : "border-divider bg-surface text-text-secondary"
+                            }`}
+                            style={payment?.name === m.name ? { borderColor: theme.primary, background: theme.soft, color: theme.dark } : undefined}>
+                            {m.name}
+                          </button>
+                        ))}
                       </div>
+                      {payment?.details && payment?.name.toLowerCase() !== "tunai" && (
+                        <div className="bg-input-fill border border-divider rounded-[10px] px-3 py-2.5">
+                          <p className="text-[11px] font-bold text-text-secondary mb-1">INSTRUKSI BAYAR — {payment.name.toUpperCase()}</p>
+                          <p className="text-[12px] text-text-secondary whitespace-pre-line">{payment.details}</p>
+                          {payment.qr && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={payment.qr} alt="QR" className="w-28 h-28 object-contain mt-2 mx-auto" />
+                          )}
+                          {payment.handling_fee ? <p className="text-[11px] text-text-tertiary mt-1">Biaya admin {formatRupiah(payment.handling_fee)}</p> : null}
+                        </div>
+                      )}
+                      {payment?.name && payment.name.toLowerCase() !== "tunai" && (
+                        <p className="text-[11px] text-warning font-semibold">
+                          ⚠️ Pesanan menunggu verifikasi pembayaran — kirim bukti via WhatsApp ke toko setelah pesan.
+                        </p>
+                      )}
 
-                      <div className="flex gap-3 pt-4">
+                      {/* POIN MEMBER */}
+                      {customer && customer.points > 0 && pointsWorth >= minRedeem && cartTotal > 0 && (
+                        <div className="bg-input-fill border border-divider rounded-[10px] px-3 py-2.5">
+                          <label className="flex items-center justify-between cursor-pointer">
+                            <div>
+                              <p className="text-[12px] font-bold text-text-secondary">Pakai Poin ({redeemable} poin)</p>
+                              <p className="text-[11px] text-text-tertiary">Tukar {formatRupiah(pointsDiscount)} dari pesanan ini</p>
+                            </div>
+                            <input type="checkbox" checked={usePoints} onChange={(e) => {
+                              setUsePoints(e.target.checked);
+                              if (redeemable <= 0) { setPointsError(`Min. tukar ${minRedeem} poin`); setUsePoints(false); }
+                              else setPointsError("");
+                            }} className="w-5 h-5 accent-[var(--primary)]" />
+                          </label>
+                          {pointsError && <p className="text-[11px] text-error mt-1">{pointsError}</p>}
+                        </div>
+                      )}
+
+                      {/* KUPON ONLINE */}
+                      {promos.length > 0 && (
+                        <div className="bg-input-fill border border-divider rounded-[10px] px-3 py-2.5">
+                          <p className="text-[11px] font-bold text-text-secondary mb-1.5">KUPON / PROMO</p>
+                          <div className="flex gap-2">
+                            <input value={promoCode} onChange={(e) => applyPromo(e.target.value)}
+                              placeholder="Masukkan kode promo"
+                              className="flex-1 px-3 h-10 rounded-[10px] border border-divider text-sm text-text-primary outline-none bg-surface focus:border-[var(--primary)] transition-colors" />
+                          </div>
+                          {promo && <p className="text-[11px] text-success font-semibold mt-1.5">✓ {promo.title || promo.code} — hemat {formatRupiah(promoDiscount)}</p>}
+                          {promoErr && <p className="text-[11px] text-error mt-1.5">{promoErr}</p>}
+                        </div>
+                      )}
+
+                      {/* Catatan */}
+                      <p className="text-[11px] font-bold text-text-secondary tracking-[.5px]">CATATAN (OPSIONAL)</p>
+                      <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+                        placeholder="Catatan untuk toko..."
+                        rows={2}
+                        className="w-full px-3 py-2.5 rounded-[10px] border border-divider text-sm text-text-primary outline-none bg-input-fill focus:border-[var(--primary)] transition-colors" />
+
+                      <div className="flex gap-3 pt-2">
                         <button onClick={() => setCheckoutView(false)} className="flex-1 border-[1.5px] border-divider rounded-[14px] py-3.5 text-[15px] font-semibold text-text-secondary active:bg-background transition-colors">
                           Kembali
                         </button>
                         <button onClick={handleSubmit} disabled={submitting} className="flex-1 text-white rounded-[14px] py-3.5 text-[15px] font-bold active:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50"
                           style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>
-                          {submitting ? "Mengirim..." : "Pesan Sekarang"}
+                          {submitting ? "Mengirim..." : `Bayar ${formatRupiah(grandTotal)}`}
                         </button>
                       </div>
                     </div>
