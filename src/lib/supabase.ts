@@ -40,6 +40,7 @@ export interface OnlineProduct {
   name: string;
   category: string;
   price: number;
+  original_price: number | null;
   stock: number;
   image_url: string;
   description: string;

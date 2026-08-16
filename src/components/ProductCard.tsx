@@ -105,8 +105,17 @@ export default function ProductCard({
       {/* ── Category ── */}
       <p className="text-[11px] text-text-tertiary mt-0.5">{product.category}</p>
 
-      {/* ── Price ── */}
-      <p className="mt-1.5 text-[14px] font-extrabold" style={{ color: "var(--primary)" }}>{formatRupiah(product.price)}</p>
+      {/* ── Price — harga coret jika ada diskon ── */}
+      <div className="mt-1.5 flex items-baseline gap-1.5 flex-wrap">
+        <span className="text-[14px] font-extrabold" style={{ color: "var(--primary)" }}>
+          {formatRupiah(product.price)}
+        </span>
+        {product.original_price != null && product.original_price > product.price && (
+          <span className="text-[11px] font-semibold line-through text-text-tertiary">
+            {formatRupiah(product.original_price)}
+          </span>
+        )}
+      </div>
 
       {/* ── Action ── */}
       <div className="mt-2">
