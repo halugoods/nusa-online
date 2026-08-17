@@ -278,7 +278,44 @@ export function getMemberSettings(store: StoreSettings | undefined | null) {
     minRedeem?: number;         // poin minimum untuk tukar
     referralRewardType?: string;
     referralRewardValue?: number;
+    // Tier member (konfigurasi dari app — v2.2.27):
+    goldMin?: number;        // poin minimal Gold (default 1000)
+    platinumMin?: number;    // poin minimal Platinum (default 5000)
+    goldPercent?: number;    // diskon % Gold (default 2)
+    platinumPercent?: number; // diskon % Platinum (default 5)
   }>(store?.member_settings, {});
+}
+
+// ─── Tier member: level dari poin + diskon otomatis ─────────────────
+export interface MemberTier {
+  level: "Silver" | "Gold" | "Platinum";
+  percent: number; // diskon % otomatis
+}
+
+export function memberLevelOf(
+  points: number,
+  settings: {
+    goldMin?: number;
+    platinumMin?: number;
+  }
+): "Silver" | "Gold" | "Platinum" {
+  const goldMin = settings.goldMin ?? 1000;
+  const platinumMin = settings.platinumMin ?? 5000;
+  if (points >= platinumMin) return "Platinum";
+  if (points >= goldMin) return "Gold";
+  return "Silver";
+}
+
+export function tierDiscountPercent(
+  level: string,
+  settings: {
+    goldPercent?: number;
+    platinumPercent?: number;
+  }
+): number {
+  if (level === "Platinum") return settings.platinumPercent ?? 5;
+  if (level === "Gold") return settings.goldPercent ?? 2;
+  return 0;
 }
 
 export async function getBranches(storeId: string): Promise<Branch[]> {

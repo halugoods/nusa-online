@@ -7,7 +7,7 @@ import {
   OnlineOrder, getStoreTheme, normalizePhoneTo08, getPaymentMethods,
   getOrderTypes, getPickupOptions, getMemberSettings, getBranches, getPromos,
   getCustomer, PaymentMethod, SubmitOrderInput, Promo, Branch, OnlineCustomer,
-  formatWA,
+  formatWA, memberLevelOf, tierDiscountPercent,
 } from "@/lib/supabase";
 import ProductCard from "@/components/ProductCard";
 
@@ -47,7 +47,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("Semua");
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"home" | "favorites" | "history">("home");
+  const [tab, setTab] = useState<"home" | "favorites" | "history" | "member">("home");
 
   /* cart */
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -152,6 +152,29 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const minRedeem = member.minRedeem ?? 500;
   const pointsWorth = Math.floor((customer?.points ?? 0) * (pointRate || 1));
 
+  /* ── progress tier member (Gold/Platinum dari konfigurasi app) ── */
+  const goldMin = member.goldMin ?? 1000;
+  const platinumMin = member.platinumMin ?? 5000;
+  const memberLevelNow = memberLevelOf(customer?.points ?? 0, { goldMin, platinumMin });
+  // Progress bar: 0 → goldMin → platinumMin (Silver/Gold), 100% saat Platinum.
+  const memberProgressPercent = memberLevelNow === "Platinum"
+    ? 100
+    : memberLevelNow === "Gold"
+      ? Math.min(100, ((customer?.points ?? 0) / platinumMin) * 100)
+      : Math.min(100, ((customer?.points ?? 0) / goldMin) * 100);
+  const memberProgressLabel = customer
+    ? memberLevelNow === "Platinum"
+      ? "Level tertinggi — nikmati diskon member"
+      : memberLevelNow === "Gold"
+        ? `${platinumMin - (customer?.points ?? 0)} poin lagi ke Platinum`
+        : `${goldMin - (customer?.points ?? 0)} poin lagi ke Gold`
+    : "";
+
+  // Link ajak teman (referral) — ?ref=<no WA customer>.
+  const refLink = typeof window !== "undefined"
+    ? `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(customer?.phone || "")}`
+    : "";
+
   /* ── cart helpers ── */
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
@@ -215,10 +238,23 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const usedPointsVal = usePoints ? Math.max(0, redeemable) : 0;
   const pointsDiscount = usedPointsVal * (pointRate || 1);
 
+  /* ── diskon tier member (Gold/Platinum otomatis) ── */
+  const memberLevel = memberLevelOf(customer?.points ?? 0, {
+    goldMin: member.goldMin,
+    platinumMin: member.platinumMin,
+  });
+  const tierPercent = tierDiscountPercent(memberLevel, {
+    goldPercent: member.goldPercent,
+    platinumPercent: member.platinumPercent,
+  });
+  const tierDiscount = customer && tierPercent > 0
+    ? Math.floor((cartTotal - promoDiscount - pointsDiscount) * tierPercent / 100)
+    : 0;
+
   /* ── delivery ongkir ── */
   const deliveryFee = orderType === "Delivery" ? (store?.delivery_fee ?? 0) : 0;
   const handlingFee = payment?.handling_fee ?? 0;
-  const grandTotal = Math.max(0, cartTotal - promoDiscount - pointsDiscount + deliveryFee + handlingFee);
+  const grandTotal = Math.max(0, cartTotal - promoDiscount - pointsDiscount - tierDiscount + deliveryFee + handlingFee);
 
   /* ── order ── */
   const handleSubmit = async () => {
@@ -544,6 +580,121 @@ export default function StorePage({ params }: { params: { variant: string; slug:
             )}
           </>
         )}
+
+        {/* MEMBER */}
+        {tab === "member" && (
+          <>
+            {/* Profil member: poin + level + progress tier */}
+            {customer ? (
+              <div className="space-y-3">
+                <div className="rounded-[18px] p-4 text-white relative overflow-hidden"
+                  style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}>
+                  <p className="text-[11px] font-bold text-white/80 tracking-[.5px]">MEMBER NUSA</p>
+                  <p className="text-lg font-extrabold mt-1">{customer.name}</p>
+                  <p className="text-[11px] text-white/80">{customer.phone}</p>
+                  <div className="flex items-end justify-between mt-3">
+                    <div>
+                      <p className="text-3xl font-black">{customer.points}</p>
+                      <p className="text-[11px] text-white/80">poin</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[11px] text-white/80">LEVEL</p>
+                      <p className="text-base font-extrabold">{customer.level}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-white/25 overflow-hidden">
+                    <div className="h-full rounded-full bg-white" style={{ width: `${memberProgressPercent}%` }} />
+                  </div>
+                  <p className="text-[11px] text-white/85 mt-1.5">{memberProgressLabel}</p>
+                </div>
+
+                {/* Info tier */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { lvl: "Silver", min: 0, pct: 0 },
+                    { lvl: "Gold", min: goldMin, pct: member.goldPercent ?? 2 },
+                    { lvl: "Platinum", min: platinumMin, pct: member.platinumPercent ?? 5 },
+                  ].map((t) => (
+                    <div key={t.lvl} className={`rounded-[14px] border p-3 ${customer.level === t.lvl ? "border-[var(--primary)]" : "border-divider"}`}
+                      style={customer.level === t.lvl ? { background: theme.soft } : undefined}>
+                      <p className={`text-[13px] font-extrabold ${customer.level === t.lvl ? "" : "text-text-secondary"}`}
+                        style={customer.level === t.lvl ? { color: theme.dark } : undefined}>{t.lvl}</p>
+                      <p className="text-[10px] text-text-tertiary mt-0.5">{t.min === 0 ? "Mulai" : `${t.min.toLocaleString("id-ID")}+ poin`}</p>
+                      <p className="text-[10px] font-bold mt-0.5" style={{ color: theme.primary }}>Diskon {t.pct}%</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Kupon saya (dipakai via promo_history) */}
+                <p className="text-[11px] font-bold text-text-secondary tracking-[.5px] pt-1">KUPON SAYA</p>
+                {promos.length === 0 ? (
+                  <div className="text-center py-8 bg-surface rounded-[14px] border border-divider">
+                    <p className="text-sm font-semibold text-text-secondary">Belum ada kupon</p>
+                    <p className="text-xs text-text-tertiary mt-1">Toko belum menambahkan promo</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {promos.map((pr) => {
+                      const usedCount = (customer.promo_history ?? []).filter((h: any) => h.promo_id === pr.id).length;
+                      const usedUp = pr.limit_per_user ? usedCount >= pr.limit_per_user : false;
+                      const expired = pr.end_date && new Date(pr.end_date) < new Date();
+                      return (
+                        <div key={pr.id} className={`bg-surface p-3.5 rounded-[14px] border ${usedUp || expired ? "border-divider opacity-60" : "border-[var(--primary)]"}`}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-extrabold" style={{ color: usedUp || expired ? undefined : theme.primary }}>{pr.code}</p>
+                              <p className="text-[11px] text-text-secondary mt-0.5">{pr.title}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[13px] font-extrabold text-text-primary">{pr.type === "persen" ? `-${pr.value}%` : `-${formatRupiah(pr.value)}`}</p>
+                              <p className="text-[10px] text-text-tertiary mt-0.5">
+                                {expired ? "Kadaluarsa" : usedUp ? `Sudah dipakai ${usedCount}x` : `Min. ${formatRupiah(pr.min_spend)}`}
+                              </p>
+                            </div>
+                          </div>
+                          {!usedUp && !expired && (
+                            <button onClick={() => { setPromoCode(pr.code); applyPromo(pr.code); setTab("home"); }}
+                              className="mt-2 text-[11px] font-bold px-3 py-1.5 rounded-lg text-white active:opacity-90 transition-all"
+                              style={{ background: theme.primary }}>
+                              Pakai kupon ini
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Ajak teman (referral) */}
+                <div className="rounded-[14px] border border-divider bg-surface p-3.5">
+                  <p className="text-[12px] font-extrabold text-text-primary">Ajak Teman</p>
+                  <p className="text-[11px] text-text-secondary mt-0.5">Bagikan link ini — teman dapat diskon/poin referral saat belanja pertama.</p>
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <div className="flex-1 bg-input-fill border border-divider rounded-[10px] px-3 py-2.5 overflow-hidden">
+                      <p className="text-[11px] text-text-tertiary truncate">{refLink}</p>
+                    </div>
+                    <button onClick={() => { navigator.clipboard?.writeText(refLink); alert("Link referral disalin!"); }}
+                      className="text-white text-[12px] font-bold px-4 py-2.5 rounded-[10px] active:opacity-90 transition-all"
+                      style={{ background: theme.primary }}>
+                      Salin
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#9CA3AF" strokeWidth="1" opacity=".5" className="mx-auto mb-3"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <p className="text-sm font-semibold text-text-secondary">Belum jadi member</p>
+                <p className="text-xs text-text-tertiary mt-1">Masukkan nomor WhatsApp di form pemesanan untuk mulai mengumpulkan poin.</p>
+                <button onClick={() => { setCheckoutView(true); setCartOpen(true); setTab("home"); }}
+                  className="mt-4 text-white text-sm font-bold px-6 py-3 rounded-[14px] active:opacity-90 transition-all"
+                  style={{ background: theme.primary }}>
+                  Mulai Belanja
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* ═══════ CART BAR (match Flutter _buildCartBar) ═══════ */}
@@ -568,6 +719,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
           { id: "home" as const, label: "Beranda", svg: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg> },
           { id: "favorites" as const, label: "Favorit", svg: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> },
           { id: "history" as const, label: "Riwayat", svg: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
+          { id: "member" as const, label: "Member", svg: <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg> },
         ]).map(({ id, label, svg }) => (
           <button
             key={id}
@@ -652,11 +804,12 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                       {/* Ringkasan total + member */}
                       <div className="bg-surface rounded-[14px] border border-divider p-3.5">
                         <p className="text-[32px] font-extrabold tracking-[-1px]" style={{ color: theme.primary }}>{formatRupiah(grandTotal)}</p>
-                        {(promoDiscount > 0 || pointsDiscount > 0 || deliveryFee > 0 || handlingFee > 0) && (
+                        {(promoDiscount > 0 || pointsDiscount > 0 || tierDiscount > 0 || deliveryFee > 0 || handlingFee > 0) && (
                           <div className="mt-1.5 space-y-1">
                             <p className="text-[11px] text-text-tertiary">Subtotal {formatRupiah(cartTotal)}</p>
                             {promoDiscount > 0 && <p className="text-[11px] text-success">Kupon {promo?.code}: -{formatRupiah(promoDiscount)}</p>}
                             {pointsDiscount > 0 && <p className="text-[11px] text-success">Poin: -{formatRupiah(pointsDiscount)}</p>}
+                            {tierDiscount > 0 && <p className="text-[11px] text-success">Diskon Member ({memberLevel} -{tierPercent}%): -{formatRupiah(tierDiscount)}</p>}
                             {deliveryFee > 0 && <p className="text-[11px] text-text-tertiary">Ongkir: +{formatRupiah(deliveryFee)}</p>}
                             {handlingFee > 0 && <p className="text-[11px] text-text-tertiary">Biaya {payment?.name}: +{formatRupiah(handlingFee)}</p>}
                           </div>
@@ -669,10 +822,13 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                               <p className="text-xs font-bold" style={{ color: theme.primary }}>{customer.points} poin</p>
                             </div>
                             <div className="mt-1.5 h-1.5 rounded-full bg-divider overflow-hidden">
-                              <div className="h-full rounded-full" style={{ width: `${Math.min(100, (customer.points % 1000) / 10)}%`, background: theme.primary }} />
+                              <div className="h-full rounded-full" style={{ width: `${memberProgressPercent}%`, background: theme.primary }} />
                             </div>
+                            {memberProgressLabel && (
+                              <p className="text-[11px] text-text-tertiary mt-1.5">{memberProgressLabel}</p>
+                            )}
                             {pointEarnPercent > 0 && (
-                              <p className="text-[11px] text-text-tertiary mt-1.5">Dapat {Math.floor(grandTotal * pointEarnPercent / 100)} poin dari pesanan ini</p>
+                              <p className="text-[11px] text-text-tertiary mt-1">Dapat {Math.floor(grandTotal * pointEarnPercent / 100)} poin dari pesanan ini</p>
                             )}
                           </div>
                         )}

@@ -93,6 +93,15 @@ function isValidSlug(slug: string): boolean {
   return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) && slug.length <= 40;
 }
 
+// Level member dari poin — konsisten dengan web (src/lib/supabase.ts).
+function memberLevelOf(points: number, member: any): string {
+  const goldMin = Number(member.goldMin) || 1000;
+  const platinumMin = Number(member.platinumMin) || 5000;
+  if (points >= platinumMin) return "Platinum";
+  if (points >= goldMin) return "Gold";
+  return "Silver";
+}
+
 // ─── Upsert store settings ──────────────────────────────────────────
 async function upsertStore(supabase: any, params: any) {
   const {
@@ -315,7 +324,7 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
       .select("store_id, member_settings")
       .eq("store_id", storeId)
       .maybeSingle();
-    let member = { pointEarnPercent: 0, referralRewardType: "nominal", referralRewardValue: 0 };
+    let member = { pointEarnPercent: 0, referralRewardType: "nominal", referralRewardValue: 0, goldMin: 1000, platinumMin: 5000 };
     try {
       member = { ...member, ...(JSON.parse(store?.member_settings ?? "{}")) };
     } catch (_) {}
@@ -345,11 +354,13 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
       if (ord.used_promo_id && !history.some((h: any) => h.promo_id === ord.used_promo_id)) {
         history.push({ promo_id: ord.used_promo_id, used_at: new Date().toISOString() });
       }
+      const newPoints = (existing.points || 0) + earned - usedPoints;
       await supabase
         .from("online_customers")
         .update({
           name: ord.customer_name || existing.name,
-          points: (existing.points || 0) + earned - usedPoints,
+          points: newPoints,
+          level: memberLevelOf(newPoints, member),
           total_spent: (existing.total_spent || 0) + total,
           promo_history: history,
           updated_at: new Date().toISOString(),
@@ -357,6 +368,7 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
         .eq("id", existing.id);
     } else {
       const history = ord.used_promo_id ? [{ promo_id: ord.used_promo_id, used_at: new Date().toISOString() }] : [];
+      const newPoints = earned - usedPoints;
       const { data: newCust } = await supabase
         .from("online_customers")
         .insert({
@@ -364,7 +376,8 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
           name: ord.customer_name || "Pelanggan",
           phone,
           total_spent: total,
-          points: earned - usedPoints,
+          points: newPoints,
+          level: memberLevelOf(newPoints, member),
           promo_history: history,
           referred_by: normalizePhoneTo08(ord.referred_by || ""),
         })
@@ -388,9 +401,10 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
             .eq("phone", refPhone)
             .maybeSingle();
           if (ref) {
+            const refPoints = (ref.points || 0) + refPts;
             await supabase
               .from("online_customers")
-              .update({ points: (ref.points || 0) + refPts })
+              .update({ points: refPoints, level: memberLevelOf(refPoints, member) })
               .eq("id", ref.id);
           }
         }
@@ -524,13 +538,29 @@ async function redeemPoints(supabase: any, params: any) {
     return jsonResponse({ error: "Poin tidak cukup", available: cust.points }, 400);
   }
 
+  // Ambil member_settings untuk hitung ulang level setelah tukar poin.
+  let member: any = {};
+  try {
+    const { data: store } = await supabase
+      .from("store_settings")
+      .select("member_settings")
+      .eq("store_id", store_id)
+      .maybeSingle();
+    member = JSON.parse(store?.member_settings ?? "{}");
+  } catch (_) {}
+
+  const pointsLeft = (cust.points || 0) - pts;
   const { error: upErr } = await supabase
     .from("online_customers")
-    .update({ points: (cust.points || 0) - pts, updated_at: new Date().toISOString() })
+    .update({
+      points: pointsLeft,
+      level: memberLevelOf(pointsLeft, member),
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", cust.id);
   if (upErr) return jsonResponse({ error: upErr.message }, 500);
 
-  return jsonResponse({ ok: true, points_left: (cust.points || 0) - pts });
+  return jsonResponse({ ok: true, points_left: pointsLeft });
 }
 
 // ─── Sync branches (cabang toko online + WA per cabang) ─────────────
