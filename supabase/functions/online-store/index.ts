@@ -103,30 +103,70 @@ function memberLevelOf(points: number, member: any): string {
 }
 
 // ─── Upsert store settings ──────────────────────────────────────────
+// Identitas toko: user_id (Google UID) + variant. store_id (= activation
+// key) tetap disimpan untuk kompatibilitas data lama (produk/order).
+// Alur:
+//   1. user_id + variant → cari row milik user tsb; jika ada → UPDATE row itu.
+//   2. Jika belum ada tapi ada row dengan store_id sama (milik user tsb,
+//      dibuat sebelum migrasi user_id) → KLAIM: set user_id ke row itu.
+//   3. Jika belum ada sama sekali → INSERT row baru dengan store_id + user_id.
+// Slug unik per (user_id, variant) — toko milik user lain dengan variant
+// sama TIDAK boleh pakai slug yang sama (409 slug_taken).
 async function upsertStore(supabase: any, params: any) {
   const {
-    store_id, store_name, description, whatsapp, address, open_hours,
+    store_id, user_id, store_name, description, whatsapp, address, open_hours,
     is_active, slug, variant, theme_id, primary_color, dark_color, soft_color,
     order_types, delivery_fee, pickup_options, payment_methods, member_settings,
   } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
 
-  // Validasi slug jika dikirim (wajib valid + unik per variant)
+  const uid = user_id || null;
+  const varId = variant ?? "";
+
+  // Ambil row milik user (by user_id+variant), lalu by store_id (legacy).
+  const { data: userRow } = await supabase
+    .from("store_settings")
+    .select("store_id")
+    .eq("user_id", uid)
+    .eq("variant", varId)
+    .maybeSingle();
+  const { data: legacyRow } = uid
+    ? await supabase
+        .from("store_settings")
+        .select("store_id")
+        .eq("store_id", store_id)
+        .maybeSingle()
+    : { data: null };
+
+  // Slug unik per (user_id, variant): cek hanya antar row MILIK USER yang
+  // bukan row target. Row user lain tidak menghalangi (anti rebutan slug).
   if (slug !== undefined && slug !== null && slug !== "") {
     if (!isValidSlug(slug)) {
       return jsonResponse({ error: "slug_invalid" }, 400);
     }
-    // Cek slug dipakai toko LAIN (variant sama, store_id beda)
+    const targetStoreId = userRow?.store_id ?? legacyRow?.store_id ?? store_id;
     const { data: existing, error: checkErr } = await supabase
       .from("store_settings")
       .select("store_id")
-      .eq("variant", variant ?? "")
+      .eq("variant", varId)
       .eq("slug", slug)
-      .neq("store_id", store_id)
+      .neq("store_id", targetStoreId)
       .maybeSingle();
     if (checkErr) return jsonResponse({ error: checkErr.message }, 500);
+    // Kalau yang punya slug sama adalah row MILIK USER ini sendiri di
+    // store_id lain (mis. varian lama) → row itu akan di-klaim/diupdate
+    // lewat userRow, jadi tidak dianggap konflik. Konflik hanya bila
+    // slug dipegang row milik user LAIN (user_id beda & bukan null).
     if (existing) {
-      return jsonResponse({ error: "slug_taken" }, 409);
+      const { data: owner } = await supabase
+        .from("store_settings")
+        .select("user_id")
+        .eq("store_id", existing.store_id)
+        .maybeSingle();
+      const ownerIsSelf = uid && owner?.user_id === uid;
+      if (!ownerIsSelf) {
+        return jsonResponse({ error: "slug_taken" }, 409);
+      }
     }
   }
 
@@ -139,13 +179,14 @@ async function upsertStore(supabase: any, params: any) {
     open_hours: open_hours ?? "08:00 - 21:00",
     is_active: is_active ?? false,
     slug: slug ?? "",
-    variant: variant ?? "",
+    variant: varId,
     theme_id: theme_id ?? "",
     primary_color: primary_color ?? "",
     dark_color: dark_color ?? "",
     soft_color: soft_color ?? "",
     updated_at: new Date().toISOString(),
   };
+  if (uid) row.user_id = uid;
   // Kolom ekstra (C1) — hanya ditulis bila dikirim (JSON string dari app).
   if (order_types !== undefined) row.order_types = order_types;
   if (delivery_fee !== undefined) row.delivery_fee = Number(delivery_fee) || 0;
@@ -153,15 +194,31 @@ async function upsertStore(supabase: any, params: any) {
   if (payment_methods !== undefined) row.payment_methods = payment_methods;
   if (member_settings !== undefined) row.member_settings = member_settings;
 
-  const { error } = await supabase.from("store_settings").upsert(row, { onConflict: "store_id" });
+  // Target: row milik user (userRow), lalu row legacy by store_id,
+  // lalu insert baru. UPDATE mempertahankan store_id asli (produk/order
+  // lama tetap tertaut) — hanya data konfigurasi yang berubah.
+  const targetId = userRow?.store_id ?? legacyRow?.store_id;
+  if (targetId) {
+    const { error } = await supabase
+      .from("store_settings")
+      .update(row)
+      .eq("store_id", targetId);
+    if (error) return jsonResponse({ error: error.message }, 500);
+    return jsonResponse({ ok: true, store_id: targetId, claimed: legacyRow && !userRow ? true : false });
+  }
 
-  if (error) return jsonResponse({ error: error.message }, 500);
-  return jsonResponse({ ok: true });
+  const { error: insErr } = await supabase
+    .from("store_settings")
+    .upsert(row, { onConflict: "store_id" });
+  if (insErr) return jsonResponse({ error: insErr.message }, 500);
+  return jsonResponse({ ok: true, store_id });
 }
 
 // ─── Cek ketersediaan slug (real-time saat user mengetik) ───────────
+// Slug dianggap TERSEDIA bila tidak ada row varian sama yang memakainya
+// KECUALI row itu milik user yang sama (row sendiri tidak menghalangi).
 async function checkSlug(supabase: any, params: any) {
-  const { slug, variant } = params;
+  const { slug, variant, user_id } = params;
   if (!slug) return jsonResponse({ error: "slug required" }, 400);
   if (!isValidSlug(slug)) {
     return jsonResponse({ available: false, reason: "invalid" });
@@ -169,12 +226,16 @@ async function checkSlug(supabase: any, params: any) {
 
   const { data, error } = await supabase
     .from("store_settings")
-    .select("store_id")
+    .select("store_id, user_id")
     .eq("variant", variant ?? "")
     .eq("slug", slug)
     .maybeSingle();
   if (error) return jsonResponse({ error: error.message }, 500);
 
+  // Row sendiri (user_id sama) → bukan "taken".
+  if (data && user_id && data.user_id === user_id) {
+    return jsonResponse({ available: true, reason: "ok" });
+  }
   return jsonResponse({ available: !data, reason: data ? "taken" : "ok" });
 }
 
@@ -644,17 +705,38 @@ async function getPromos(supabase: any, params: any) {
 // TANPA filter is_active: app harus bisa membaca toko walau toggle
 // OFF (mis. user baru saja mematikan lalu kembali ke layar). Storefront
 // publik (getStoreByVariantSlug) yang memfilter is_active.
+// Lookup: store_id (legacy) DULU, lalu fallback (user_id, variant) —
+// supaya user yang clear-data + re-login (key mungkin beda) tetap
+// menemukan setup lamanya.
 async function getStore(supabase: any, params: any) {
-  const { store_id } = params;
-  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  const { store_id, user_id, variant } = params;
+  if (!store_id && !(user_id && variant)) {
+    return jsonResponse({ error: "store_id (atau user_id+variant) required" }, 400);
+  }
 
-  const { data, error } = await supabase
-    .from("store_settings")
-    .select("*")
-    .eq("store_id", store_id)
-    .maybeSingle();
+  let data: any = null;
+  if (store_id) {
+    const r = await supabase
+      .from("store_settings")
+      .select("*")
+      .eq("store_id", store_id)
+      .maybeSingle();
+    if (r.error) return jsonResponse({ error: r.error.message }, 500);
+    data = r.data;
+  }
 
-  if (error) return jsonResponse({ error: error.message }, 500);
+  // Fallback: row milik user ini di varian ini (setup lama tetap ketemu).
+  if (!data && user_id && variant) {
+    const r = await supabase
+      .from("store_settings")
+      .select("*")
+      .eq("user_id", user_id)
+      .eq("variant", variant)
+      .maybeSingle();
+    if (r.error) return jsonResponse({ error: r.error.message }, 500);
+    data = r.data;
+  }
+
   if (!data) return jsonResponse({ error: "Store not found" }, 404);
 
   return jsonResponse({ store: data });
