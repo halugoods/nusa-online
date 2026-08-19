@@ -402,11 +402,16 @@ export default function StorePage({ params }: { params: { variant: string; slug:
       {/* ═══════ HEADER (match Flutter StorefrontScreen header) ═══════ */}
       <header className="sticky top-0 z-30 bg-surface/95 backdrop-blur-lg border-b border-divider">
         <div className="flex items-start gap-3 px-3 py-3">
-          {/* Logo avatar — gradient N */}
-          <div className="w-11 h-11 rounded-md flex items-center justify-center flex-shrink-0"
-            style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})`, boxShadow: `0 4px 8px ${theme.primary}40` }}>
-            <span className="text-white text-[22px] font-extrabold">N</span>
-          </div>
+          {/* Logo avatar — gradient N (fallback bila logo_url kosong) */}
+          {store.logo_url ? (
+            <img src={store.logo_url} alt="logo" className="w-11 h-11 rounded-md object-cover flex-shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          ) : (
+            <div className="w-11 h-11 rounded-md flex items-center justify-center flex-shrink-0"
+              style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})`, boxShadow: `0 4px 8px ${theme.primary}40` }}>
+              <span className="text-white text-[22px] font-extrabold">N</span>
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <h1 className="text-lg font-extrabold text-text-primary truncate">{store.store_name}</h1>
             <div className="flex items-center gap-2 mt-0.5">

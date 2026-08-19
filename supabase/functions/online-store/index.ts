@@ -14,6 +14,9 @@
 //   action: 'redeem_points'     — tukar poin member (validasi saldo)
 //   action: 'sync_branches'     — upload cabang Aktif + WA per cabang → tabel branches
 //   action: 'sync_promos'       — upload promo (quota/periode/minSpend/limitPerUser) → tabel promos
+//   action: 'get_promos'        — read-back promo milik store
+//   action: 'sync_print_form_configs' — cadangan config field form Order Cetak (replace-all per store)
+//   action: 'get_print_form_configs'  — read-back config field form Order Cetak
 // ============================================================================
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
@@ -79,6 +82,10 @@ serve(async (req: Request) => {
         return syncPromos(supabase, params);
       case "get_promos":
         return getPromos(supabase, params);
+      case "sync_print_form_configs":
+        return syncPrintFormConfigs(supabase, params);
+      case "get_print_form_configs":
+        return getPrintFormConfigs(supabase, params);
       default:
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
@@ -117,6 +124,7 @@ async function upsertStore(supabase: any, params: any) {
     store_id, user_id, store_name, description, whatsapp, address, open_hours,
     is_active, slug, variant, theme_id, primary_color, dark_color, soft_color,
     order_types, delivery_fee, pickup_options, payment_methods, member_settings,
+    logo_url,
   } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
 
@@ -193,6 +201,7 @@ async function upsertStore(supabase: any, params: any) {
   if (pickup_options !== undefined) row.pickup_options = pickup_options;
   if (payment_methods !== undefined) row.payment_methods = payment_methods;
   if (member_settings !== undefined) row.member_settings = member_settings;
+  if (logo_url !== undefined) row.logo_url = logo_url;
 
   // Target: row milik user (userRow), lalu row legacy by store_id,
   // lalu insert baru. UPDATE mempertahankan store_id asli (produk/order
@@ -699,6 +708,47 @@ async function getPromos(supabase: any, params: any) {
     .order("created_at", { ascending: false });
   if (error) return jsonResponse({ error: error.message }, 500);
   return jsonResponse({ promos: data ?? [] });
+}
+
+// ─── Print form configs (Order Cetak — field per layanan) ──────────
+// Cadangan cloud dari config field form per layanan percetakan.
+// Store keyed by store_id (sama dengan tabel lain). Web tidak memakai —
+// murni supaya config tidak hilang saat clear-data / ganti device.
+async function syncPrintFormConfigs(supabase: any, params: any) {
+  const { store_id, configs } = params;
+  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  if (!configs || !Array.isArray(configs)) {
+    return jsonResponse({ error: "configs array required" }, 400);
+  }
+
+  const { error: delErr } = await supabase
+    .from("print_form_configs")
+    .delete()
+    .eq("store_id", store_id);
+  if (delErr) return jsonResponse({ error: delErr.message }, 500);
+
+  if (configs.length === 0) return jsonResponse({ ok: true, count: 0 });
+
+  const rows = configs.map((c: any) => ({
+    store_id,
+    service_name: c.service_name ?? "",
+    fields_json: c.fields_json ?? null,
+    updated_at: new Date().toISOString(),
+  }));
+  const { error: insErr } = await supabase.from("print_form_configs").insert(rows);
+  if (insErr) return jsonResponse({ error: insErr.message }, 500);
+  return jsonResponse({ ok: true, count: rows.length });
+}
+
+async function getPrintFormConfigs(supabase: any, params: any) {
+  const { store_id } = params;
+  if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
+  const { data, error } = await supabase
+    .from("print_form_configs")
+    .select("service_name, fields_json")
+    .eq("store_id", store_id);
+  if (error) return jsonResponse({ error: error.message }, 500);
+  return jsonResponse({ configs: data ?? [] });
 }
 
 // ─── Get store settings (admin app) ────────────────────────────
