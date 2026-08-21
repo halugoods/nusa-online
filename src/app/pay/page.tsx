@@ -44,7 +44,7 @@ const PACKAGES: Package[] = [
     label: "Lifetime",
     price: 249000,
     priceDisplay: "Rp249.000",
-    duration: "Akses seumur hidup + FREE NFC 2pcs",
+    duration: "Akses seumur hidup",
     badge: "Best Value",
   },
 ];
