@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -52,6 +52,9 @@ const PACKAGES: Package[] = [
 // Supabase URL — hardcoded (same as vercel.json)
 const SUPABASE_URL = "https://sakeuhcbcnueplzlkltm.supabase.co";
 
+const POLL_INTERVAL_MS = 4000;
+const QRIS_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes per InstanPay
+
 // ─── Page ────────────────────────────────────────────────────────
 
 export default function PayPage() {
@@ -60,10 +63,16 @@ export default function PayPage() {
   const [selectedPackage, setSelectedPackage] = useState<string>("lifetime");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [snapToken, setSnapToken] = useState("");
   const [licenseKey, setLicenseKey] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
-  const [showSnap, setShowSnap] = useState(false);
+  // QRIS state
+  const [transactionId, setTransactionId] = useState("");
+  const [qrSvg, setQrSvg] = useState("");
+  const [totalAmountFormatted, setTotalAmountFormatted] = useState("");
+  const [baseAmountFormatted, setBaseAmountFormatted] = useState("");
+  const [countdown, setCountdown] = useState("");
+
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Parse query params on mount
   useEffect(() => {
@@ -78,17 +87,42 @@ export default function PayPage() {
     }
   }, []);
 
-  // Load Midtrans Snap.js (sandbox)
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://app.sandbox.midtrans.com/snap/snap.js";
-    script.setAttribute("data-client-key", "SB-Mid-client-TIVMYMEz-xO1Lo_j");
-    script.async = true;
-    document.body.appendChild(script);
-    return () => { document.body.removeChild(script); };
-  }, []);
-
   const selected = PACKAGES.find((p) => p.id === selectedPackage)!;
+
+  function clearPoll() {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }
+
+  useEffect(() => clearPoll, []);
+
+  async function createPayment(googleId: string) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/instanpay`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "create",
+        product: app!.id,
+        package: selectedPackage,
+        google_id: googleId,
+        customer_name: "Pelanggan NUSA",
+      }),
+    });
+    return res.json();
+  }
+
+  async function pollStatus(txId: string) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/instanpay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status", transactionId: txId }),
+    });
+    return res.json();
+  }
 
   async function handlePay() {
     if (!searchParams || !app) return;
@@ -101,26 +135,10 @@ export default function PayPage() {
 
     setLoading(true);
     setError("");
+    clearPoll();
 
     try {
-      // 1. Get snap token from edge function
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/midtrans`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNha2V1aGNiY251ZXBsemxrbHRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2ODIzMDEsImV4cCI6MjA5OTI1ODMwMX0.WvjZJ8Sd3o5T8a4vMApyvoCoS01Qv493mo1PxyWO06M`,
-        },
-        body: JSON.stringify({
-          action: "get_token",
-          product: app.id,
-          package: selectedPackage,
-          google_id: googleId,
-          customer_name: "Pelanggan NUSA",
-          customer_email: "pelanggan@nusa.app",
-        }),
-      });
-
-      const data = await res.json();
+      const data = await createPayment(googleId);
 
       if (data.error === "already_active") {
         setLicenseKey(data.key ?? "");
@@ -128,42 +146,54 @@ export default function PayPage() {
         setError("Anda sudah memiliki lisensi aktif! Silakan kembali ke aplikasi.");
         return;
       }
-
       if (data.error) {
         setError(data.message ?? data.error);
         return;
       }
 
-      setSnapToken(data.token);
-      setShowSnap(true);
+      // Show QRIS + start polling
+      setTransactionId(data.transactionId);
+      setQrSvg(data.qrCodeSvg);
+      setTotalAmountFormatted(data.totalFormatted ?? `Rp ${data.totalAmount}`);
+      setBaseAmountFormatted(data.baseFormatted ?? `Rp ${data.baseAmount}`);
 
-      // 2. Open Midtrans Snap popup
-      if ((window as any).snap) {
-        (window as any).snap.pay(data.token, {
-          onSuccess: async function (result: any) {
-            setShowSnap(false);
-            await handleVerify(result.order_id);
-          },
-          onPending: function (result: any) {
-            setShowSnap(false);
-            setError(
-              `Pembayaran pending. Status: ${result.transaction_status}. Silakan cek kembali atau hubungi kami.`
-            );
-          },
-          onError: function (result: any) {
-            setShowSnap(false);
-            setError(`Pembayaran gagal: ${result.status_message}`);
-          },
-          onClose: function () {
-            setShowSnap(false);
-            if (!licenseKey) {
-              setError("Pembayaran dibatalkan.");
-            }
-          },
-        });
-      } else {
-        setError("Midtrans Snap gagal dimuat. Coba lagi.");
-      }
+      // Countdown to QRIS expiration (30 min from creation)
+      const createdMs = Date.now();
+      const ticker = setInterval(() => {
+        const remaining = QRIS_MAX_LIFETIME_MS - (Date.now() - createdMs);
+        if (remaining <= 0) {
+          clearInterval(ticker);
+          setError("QRIS telah kedaluwarsa. Silakan buat pembayaran baru.");
+          return;
+        }
+        const mins = Math.floor(remaining / 60000);
+        const secs = Math.floor((remaining % 60000) / 1000);
+        setCountdown(
+          `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+        );
+      }, 1000);
+
+      pollTimer.current = setInterval(async () => {
+        try {
+          const d = await pollStatus(data.transactionId);
+          if (d.success) {
+            clearPoll();
+            clearInterval(ticker);
+            setLicenseKey(d.key ?? "");
+            setExpiresAt(d.expires_at ?? "");
+            // Signal success back to the Flutter app via URL scheme
+            setTimeout(() => {
+              window.location.href = `nusa://payment-success?key=${encodeURIComponent(d.key)}`;
+            }, 2000);
+          } else if (d.status === "EXPIRED") {
+            clearPoll();
+            clearInterval(ticker);
+            setError("Pembayaran telah kedaluwarsa. Silakan buat ulang.");
+          }
+        } catch (e: any) {
+          // transient network — keep polling
+        }
+      }, POLL_INTERVAL_MS);
     } catch (e: any) {
       setError(`Error: ${e.message}`);
     } finally {
@@ -171,39 +201,7 @@ export default function PayPage() {
     }
   }
 
-  async function handleVerify(orderId: string) {
-    setLoading(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/midtrans`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNha2V1aGNiY251ZXBsemxrbHRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM2ODIzMDEsImV4cCI6MjA5OTI1ODMwMX0.WvjZJ8Sd3o5T8a4vMApyvoCoS01Qv493mo1PxyWO06M`,
-        },
-        body: JSON.stringify({ action: "verify", order_id: orderId }),
-      });
-
-      const data = await res.json();
-
-      if (data.success) {
-        setLicenseKey(data.key);
-        setExpiresAt(data.expires_at ?? "");
-        // Signal success back to the Flutter app via URL scheme
-        const flutterUrl = `nusa://payment-success?key=${encodeURIComponent(data.key)}`;
-        setTimeout(() => {
-          window.location.href = flutterUrl;
-        }, 2000);
-      } else {
-        setError(data.message ?? "Verifikasi pembayaran gagal");
-      }
-    } catch (e: any) {
-      setError(`Error: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // ─── Error state ───────────────────────────────────────────────
+  // ─── Error / product missing state ───────────────────────────
   if (error && !app) {
     return (
       <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
@@ -245,6 +243,63 @@ export default function PayPage() {
           <p className="text-white/40 text-xs">
             Lisensi otomatis teraktivasi. Kembali ke aplikasi...
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── QRIS payment shown ──────────────────────────────────────
+  if (transactionId && qrSvg) {
+    return (
+      <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
+        <div className="max-w-md w-full text-center">
+          <div className="text-4xl mb-2">{app?.icon ?? "📦"}</div>
+          <h1 className="text-white text-xl font-bold mb-1">Scan QRIS</h1>
+          <p className="text-white/50 text-sm mb-6">
+            Bayar dengan aplikasi e-wallet / m-banking mana pun
+          </p>
+
+          {/* QR code */}
+          <div className="bg-white rounded-2xl p-4 inline-block mb-4">
+            <div
+              className="w-56 h-56 flex items-center justify-center"
+              dangerouslySetInnerHTML={{ __html: qrSvg }}
+            />
+          </div>
+
+          <p className="text-white/30 text-xs mb-2">Atau bayar ke</p>
+          <p className="text-white font-mono text-xl font-bold mb-4 break-all">
+            {totalAmountFormatted}
+          </p>
+
+          <div className="bg-white/5 rounded-xl p-3 mb-6">
+            <p className="text-white/40 text-xs">
+              Harga dasar {baseAmountFormatted} + kode unik. Total yang harus
+              dibayar: <span className="text-white font-semibold">{totalAmountFormatted}</span>
+            </p>
+            <p className="text-white/40 text-xs mt-2">
+              QRIS berlaku <span className="text-white/70 font-semibold">{countdown}</span>
+            </p>
+          </div>
+
+          {/* Error */}
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          )}
+
+          <p className="text-white/40 text-xs animate-pulse">
+            Menunggu pembayaran…
+          </p>
+          {!loading && (
+            <button
+              onClick={() => handlePay()}
+              className="mt-4 w-full py-3 rounded-xl font-semibold text-white/80 bg-white/10 hover:bg-white/15 transition-all duration-200"
+            >
+              🔄 Buat Ulang QRIS
+            </button>
+          )}
         </div>
       </div>
     );
@@ -324,7 +379,7 @@ export default function PayPage() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              {showSnap ? "Menunggu pembayaran..." : "Memproses..."}
+              Membuat QRIS...
             </span>
           ) : (
             `Bayar ${selected.priceDisplay}`
@@ -332,7 +387,7 @@ export default function PayPage() {
         </button>
 
         <p className="text-white/30 text-xs text-center mt-4">
-          Pembayaran aman via Midtrans
+          Pembayaran aman via InstanPay (QRIS)
         </p>
       </div>
     </div>

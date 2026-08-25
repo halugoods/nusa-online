@@ -20,10 +20,18 @@ import {
   type LicenseTier,
   type ActivationRecord,
 } from "@/lib/license-manager";
+import {
+  listTutorials,
+  createTutorial,
+  updateTutorial,
+  deleteTutorial,
+  uploadThumbnail,
+  type TutorialRecord,
+} from "@/lib/tutorial-manager";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate";
+type View = "overview" | "licenses" | "generate" | "tutorials";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -235,7 +243,7 @@ export default function DashboardPage() {
       {/* Tabs */}
       <div className="bg-white border-b border-gray-100">
         <div className="max-w-5xl mx-auto px-4 flex gap-0">
-          {(["overview", "licenses", "generate"] as View[]).map((v) => (
+          {(["overview", "licenses", "generate", "tutorials"] as View[]).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -245,7 +253,7 @@ export default function DashboardPage() {
                   : "border-transparent text-gray-500 hover:text-gray-700"
               }`}
             >
-              {v === "overview" ? "Overview" : v === "licenses" ? "Lisensi" : "Generate"}
+              {v === "overview" ? "Overview" : v === "licenses" ? "Lisensi" : v === "tutorials" ? "Tutorial" : "Generate"}
             </button>
           ))}
         </div>
@@ -256,6 +264,7 @@ export default function DashboardPage() {
         {view === "overview" && <OverviewTab />}
         {view === "licenses" && <LicensesTab />}
         {view === "generate" && <GenerateTab />}
+        {view === "tutorials" && <TutorialsTab />}
       </main>
     </div>
   );
@@ -1092,6 +1101,282 @@ function GenerateTab() {
           </button>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ─── Tutorials Tab ────────────────────────────────────────────────────
+
+function TutorialsTab() {
+  const [tutorials, setTutorials] = useState<TutorialRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<TutorialRecord | null>(null);
+
+  async function reload() {
+    setLoading(true);
+    setError("");
+    try {
+      setTutorials(await listTutorials());
+    } catch (e: any) {
+      setError(e.message);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleDelete(id: string) {
+    if (!confirm("Yakin mau hapus tutorial ini?")) return;
+    try {
+      await deleteTutorial(id);
+      reload();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center py-12 text-gray-400 text-sm">Memuat...</div>;
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900">Video Tutorial</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Kelola video panduan (YouTube). Pilih varian (boleh lebih dari satu) supaya app menampilkan tutorial yang sesuai.
+          </p>
+        </div>
+        <button
+          onClick={() => { setEditing(null); setShowForm(true); }}
+          className="px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors text-sm"
+        >
+          + Tambah Tutorial
+        </button>
+      </div>
+
+      {error && (
+        <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg mb-4">{error}</p>
+      )}
+
+      {showForm && (
+        <TutorialForm
+          editing={editing}
+          onClose={() => setShowForm(false)}
+          onSaved={() => { setShowForm(false); reload(); }}
+        />
+      )}
+
+      {tutorials.length === 0 && !error ? (
+        <div className="text-center py-12 text-gray-400 text-sm">
+          Belum ada tutorial. Klik "+ Tambah Tutorial" untuk mulai.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {tutorials.map((t) => {
+            const variantNames = t.variants
+              .map((v) => PRODUCTS.find((p) => p.id === v)?.name ?? v)
+              .join(", ");
+            return (
+              <div key={t.id} className="bg-white rounded-xl border border-gray-100 p-4 flex gap-4">
+                {t.thumbnail_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={t.thumbnail_url}
+                    alt={t.title}
+                    className="w-32 h-20 object-cover rounded-lg shrink-0 bg-gray-100"
+                  />
+                ) : (
+                  <div className="w-32 h-20 rounded-lg shrink-0 bg-gray-100 flex items-center justify-center text-2xl">
+                    🎬
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-gray-900 text-sm truncate" title={t.title}>{t.title}</p>
+                  <a href={t.yt_url} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline break-all">
+                    {t.yt_url}
+                  </a>
+                  {t.description && (
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{t.description}</p>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-1.5">
+                    Varian: {variantNames || "(semua / belum dipilih)"} · urutan {t.sort_order}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button
+                    onClick={() => { setEditing(t); setShowForm(true); }}
+                    className="px-3 py-1 text-xs text-gray-600 hover:text-primary hover:bg-primary/5 rounded-lg transition-colors text-left"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(t.id)}
+                    className="px-3 py-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors text-left"
+                  >
+                    Hapus
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TutorialForm({
+  editing,
+  onClose,
+  onSaved,
+}: {
+  editing: TutorialRecord | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [title, setTitle] = useState(editing?.title ?? "");
+  const [ytUrl, setYtUrl] = useState(editing?.yt_url ?? "");
+  const [description, setDescription] = useState(editing?.description ?? "");
+  const [sortOrder, setSortOrder] = useState(String(editing?.sort_order ?? 0));
+  const [variants, setVariants] = useState<string[]>(editing?.variants ?? []);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(editing?.thumbnail_url ?? null);
+  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState("");
+
+  const [file, setFile] = useState<File | null>(null);
+
+  function toggleVariant(id: string) {
+    setVariants((prev) =>
+      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
+    );
+  }
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    // Preview lokal
+    setThumbnailUrl(URL.createObjectURL(f));
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!title.trim() || !ytUrl.trim()) return;
+    setSaving(true);
+    setBusy("");
+    try {
+      let thumb = thumbnailUrl;
+      if (file) {
+        const key = `tut-${Date.now()}.${file.name.split(".").pop() || "jpg"}`;
+        thumb = await uploadThumbnail(file, key);
+      }
+      const payload = {
+        title: title.trim(),
+        yt_url: ytUrl.trim(),
+        description: description.trim() || null,
+        thumbnail_url: thumb,
+        variants,
+        sort_order: parseInt(sortOrder) || 0,
+      };
+      if (editing) {
+        await updateTutorial(editing.id, payload);
+      } else {
+        await createTutorial(payload);
+      }
+      onSaved();
+    } catch (err: any) {
+      setBusy(err.message ?? "Gagal menyimpan");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-20 p-4" onClick={onClose}>
+      <form
+        onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 space-y-4"
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-gray-900">{editing ? "Edit Tutorial" : "Tambah Tutorial"}</h3>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700">Judul</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required
+            className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            placeholder="Cara Checkout & Cetak Struk" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700">Link YouTube</label>
+          <input value={ytUrl} onChange={(e) => setYtUrl(e.target.value)} required
+            className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            placeholder="https://youtube.com/shorts/xxxx" />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700">Deskripsi <span className="text-gray-400 font-normal">(opsional)</span></label>
+          <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2}
+            className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+            placeholder="Ringkasan singkat tutorial..." />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700">Thumbnail <span className="text-gray-400 font-normal">(opsional)</span></label>
+          <input type="file" accept="image/*" onChange={handleFile}
+            className="text-sm" />
+          {thumbnailUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={thumbnailUrl} alt="preview" className="mt-2 w-40 h-24 object-cover rounded-lg bg-gray-100" />
+          )}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700 mb-1">Tampilkan di varian aplikasi</label>
+          <div className="grid grid-cols-2 gap-2">
+            {PRODUCTS.map((p) => (
+              <label key={p.id} className="flex items-center gap-2 cursor-pointer select-none border border-gray-100 rounded-lg px-3 py-2 hover:bg-gray-50">
+                <input
+                  type="checkbox"
+                  checked={variants.includes(p.id)}
+                  onChange={() => toggleVariant(p.id)}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span className="text-sm text-gray-700">{p.name}</span>
+              </label>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-400">Pilih satu atau lebih. Kosongkan kalau mau tampil di semua varian.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-gray-700">Urutan <span className="text-gray-400 font-normal">(kecil = tampil duluan)</span></label>
+          <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}
+            className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm" />
+        </div>
+
+        {busy && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{busy}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-medium transition-colors">
+            Batal
+          </button>
+          <button type="submit" disabled={saving}
+            className="px-6 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm">
+            {saving ? "Menyimpan..." : editing ? "Simpan Perubahan" : "Simpan"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }
