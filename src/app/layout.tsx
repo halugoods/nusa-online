@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import ChatCSButton from "@/components/ChatCSButton";
 
 export const metadata: Metadata = {
   title: "NUSA — Aplikasi Kasir untuk Semua Bisnis",
@@ -21,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       </head>
-      <body className="bg-background text-text-primary min-h-screen">{children}<ChatCSButton /></body>
+      <body className="bg-background text-text-primary min-h-screen">{children}</body>
     </html>
   );
 }

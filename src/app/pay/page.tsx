@@ -55,6 +55,25 @@ const SUPABASE_URL = "https://sakeuhcbcnueplzlkltm.supabase.co";
 const POLL_INTERVAL_MS = 4000;
 const QRIS_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes per InstanPay
 
+// ─── NUSA design system helpers ─────────────────────────────────
+
+function NusaLogo({ app, size = 56 }: { app: AppInfo | null; size?: number }) {
+  const color = app?.color ?? "#F97316";
+  return (
+    <div
+      className="mx-auto rounded-full flex items-center justify-center shadow-card"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: `${color}1A`, // ~10% tint
+        fontSize: size * 0.45,
+      }}
+    >
+      <span>{app?.icon ?? "📦"}</span>
+    </div>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────
 
 export default function PayPage() {
@@ -201,14 +220,17 @@ export default function PayPage() {
     }
   }
 
+  const card =
+    "w-full max-w-md bg-surface rounded-xl shadow-card border border-subtle";
+
   // ─── Error / product missing state ───────────────────────────
   if (error && !app) {
     return (
-      <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
-        <div className="text-center">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className="text-center bg-white rounded-xl shadow-card border border-subtle px-8 py-10 max-w-sm">
           <div className="text-5xl mb-4">😞</div>
-          <p className="text-white text-lg font-semibold mb-2">Oops!</p>
-          <p className="text-white/60 text-sm max-w-xs">{error}</p>
+          <p className="text-gray-900 text-lg font-semibold mb-2">Oops!</p>
+          <p className="text-text-secondary text-sm">{error}</p>
         </div>
       </div>
     );
@@ -217,30 +239,30 @@ export default function PayPage() {
   // ─── Success: license key generated ──────────────────────────
   if (licenseKey) {
     return (
-      <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
-        <div className="text-center max-w-sm w-full">
-          <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className={card + " text-center p-8"}>
+          <div className="w-16 h-16 rounded-full bg-success-soft flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-success-text" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
             </svg>
           </div>
-          <h2 className="text-white text-xl font-bold mb-2">Pembayaran Berhasil!</h2>
-          <p className="text-white/60 text-sm mb-6">
+          <h2 className="text-gray-900 text-xl font-bold mb-2">Pembayaran Berhasil!</h2>
+          <p className="text-text-secondary text-sm mb-6">
             Lisensi {app?.name ?? "NUSA"} ({selected.label}) sudah aktif.
             Kembali ke aplikasi untuk mulai menggunakan.
           </p>
           {licenseKey && (
-            <div className="bg-white/5 rounded-xl p-4 mb-4">
-              <p className="text-white/40 text-xs mb-1">Key Lisensi</p>
-              <p className="text-white font-mono text-sm break-all">{licenseKey}</p>
+            <div className="bg-input-fill border border-input-border rounded-lg p-4 mb-4 text-left">
+              <p className="text-text-tertiary text-xs mb-1">Key Lisensi</p>
+              <p className="text-gray-900 font-mono text-sm break-all">{licenseKey}</p>
               {expiresAt && (
-                <p className="text-white/40 text-xs mt-2">
+                <p className="text-text-tertiary text-xs mt-2">
                   Berlaku sampai {new Date(expiresAt).toLocaleDateString("id-ID")}
                 </p>
               )}
             </div>
           )}
-          <p className="text-white/40 text-xs">
+          <p className="text-text-tertiary text-xs">
             Lisensi otomatis teraktivasi. Kembali ke aplikasi...
           </p>
         </div>
@@ -251,51 +273,52 @@ export default function PayPage() {
   // ─── QRIS payment shown ──────────────────────────────────────
   if (transactionId && qrSvg) {
     return (
-      <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
-        <div className="max-w-md w-full text-center">
-          <div className="text-4xl mb-2">{app?.icon ?? "📦"}</div>
-          <h1 className="text-white text-xl font-bold mb-1">Scan QRIS</h1>
-          <p className="text-white/50 text-sm mb-6">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <div className={card + " text-center p-8"}>
+          <NusaLogo app={app} size={48} />
+          <h1 className="text-gray-900 text-xl font-bold mt-3 mb-1">Scan QRIS</h1>
+          <p className="text-text-secondary text-sm mb-6">
             Bayar dengan aplikasi e-wallet / m-banking mana pun
           </p>
 
           {/* QR code */}
-          <div className="bg-white rounded-2xl p-4 inline-block mb-4">
+          <div className="border border-subtle rounded-lg p-3 inline-block mb-4">
             <div
               className="w-56 h-56 flex items-center justify-center"
               dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
           </div>
 
-          <p className="text-white/30 text-xs mb-2">Atau bayar ke</p>
-          <p className="text-white font-mono text-xl font-bold mb-4 break-all">
+          <p className="text-text-tertiary text-xs mb-2">Atau bayar ke</p>
+          <p className="text-gray-900 font-mono text-xl font-bold mb-4 break-all">
             {totalAmountFormatted}
           </p>
 
-          <div className="bg-white/5 rounded-xl p-3 mb-6">
-            <p className="text-white/40 text-xs">
+          <div className="bg-primary-soft rounded-lg p-3 mb-6">
+            <p className="text-text-secondary text-xs">
               Harga dasar {baseAmountFormatted} + kode unik. Total yang harus
-              dibayar: <span className="text-white font-semibold">{totalAmountFormatted}</span>
+              dibayar: <span className="text-gray-900 font-semibold">{totalAmountFormatted}</span>
             </p>
-            <p className="text-white/40 text-xs mt-2">
-              QRIS berlaku <span className="text-white/70 font-semibold">{countdown}</span>
+            <p className="text-text-secondary text-xs mt-2">
+              QRIS berlaku{" "}
+              <span className="text-gray-900 font-semibold">{countdown}</span>
             </p>
           </div>
 
           {/* Error */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
-              <p className="text-red-400 text-sm">{error}</p>
+            <div className="bg-error-soft border border-error/20 rounded-lg p-3 mb-4">
+              <p className="text-error-text text-sm">{error}</p>
             </div>
           )}
 
-          <p className="text-white/40 text-xs animate-pulse">
+          <p className="text-text-tertiary text-xs animate-pulse">
             Menunggu pembayaran…
           </p>
           {!loading && (
             <button
               onClick={() => handlePay()}
-              className="mt-4 w-full py-3 rounded-xl font-semibold text-white/80 bg-white/10 hover:bg-white/15 transition-all duration-200"
+              className="mt-4 w-full py-3 rounded-lg font-semibold text-gray-700 bg-input-fill border border-input-border hover:bg-divider transition-all duration-200"
             >
               🔄 Buat Ulang QRIS
             </button>
@@ -307,15 +330,15 @@ export default function PayPage() {
 
   // ─── Package selection ────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0A0A1A] flex items-center justify-center p-4">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className={card + " p-8"}>
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="text-4xl mb-2">{app?.icon ?? "📦"}</div>
-          <h1 className="text-white text-xl font-bold mb-1">
+          <NusaLogo app={app} size={56} />
+          <h1 className="text-gray-900 text-xl font-bold mt-3 mb-1">
             {app?.name ?? "NUSA"}
           </h1>
-          <p className="text-white/50 text-sm">Pilih paket lisensi</p>
+          <p className="text-text-secondary text-sm">Pilih paket lisensi</p>
         </div>
 
         {/* Package cards */}
@@ -324,31 +347,31 @@ export default function PayPage() {
             <button
               key={pkg.id}
               onClick={() => setSelectedPackage(pkg.id)}
-              className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 ${
+              className={`w-full text-left p-4 rounded-lg border-2 transition-all duration-200 ${
                 selectedPackage === pkg.id
-                  ? "border-white/30 bg-white/10"
-                  : "border-white/10 bg-white/5 hover:border-white/20"
+                  ? "border-primary bg-primary-soft"
+                  : "border-input-border bg-surface hover:border-primary/40"
               }`}
             >
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-white font-semibold">{pkg.label}</span>
+                    <span className="text-gray-900 font-semibold">{pkg.label}</span>
                     {pkg.badge && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 text-white/80 font-medium">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary text-white font-medium">
                         {pkg.badge}
                       </span>
                     )}
                   </div>
-                  <p className="text-white/40 text-xs mt-0.5">{pkg.duration}</p>
+                  <p className="text-text-secondary text-xs mt-0.5">{pkg.duration}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-white font-bold text-lg">{pkg.priceDisplay}</p>
+                  <p className="text-gray-900 font-bold text-lg">{pkg.priceDisplay}</p>
                 </div>
               </div>
               {selectedPackage === pkg.id && (
-                <div className="mt-3 pt-3 border-t border-white/10">
-                  <div className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center ml-auto">
+                <div className="mt-3 pt-3 border-t border-primary/20">
+                  <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center ml-auto">
                     <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
@@ -361,8 +384,8 @@ export default function PayPage() {
 
         {/* Error */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4">
-            <p className="text-red-400 text-sm">{error}</p>
+          <div className="bg-error-soft border border-error/20 rounded-lg p-3 mb-4">
+            <p className="text-error-text text-sm">{error}</p>
           </div>
         )}
 
@@ -370,7 +393,7 @@ export default function PayPage() {
         <button
           onClick={handlePay}
           disabled={loading}
-          className="w-full py-3.5 rounded-xl font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full py-3.5 rounded-lg font-semibold text-white transition-all duration-200 hover:opacity-90 shadow-bar disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
           style={{ backgroundColor: app?.color ?? "#F97316" }}
         >
           {loading ? (
@@ -386,7 +409,7 @@ export default function PayPage() {
           )}
         </button>
 
-        <p className="text-white/30 text-xs text-center mt-4">
+        <p className="text-text-tertiary text-xs text-center mt-4">
           Pembayaran aman via InstanPay (QRIS)
         </p>
       </div>
