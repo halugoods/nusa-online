@@ -519,6 +519,15 @@ function LicensesTab() {
                           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${badge.bg}`}>
                             {badge.label}
                           </span>
+                          {!lic.google_user_id &&
+                            (lic.status === "Active" || lic.status === "Trial") && (
+                              <span
+                                className="ml-1 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-700"
+                                title="Lisensi terpakai di app tapi belum ter-link akun Google — revoke tidak akan memblokir device manapun sampai di-link"
+                              >
+                                belum link
+                              </span>
+                            )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 hidden lg:table-cell text-xs">
                           {formatDate(lic.created_at)}
