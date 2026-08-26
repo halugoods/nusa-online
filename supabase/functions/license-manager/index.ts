@@ -144,6 +144,10 @@ serve(async (req: Request) => {
         return handleDelete(supabase, params);
       case "stats":
         return handleStats(supabase);
+      case "get_min_versions":
+        return handleGetMinVersions(supabase);
+      case "set_min_version":
+        return handleSetMinVersion(supabase, params);
       default:
         return json({ error: `Unknown action: ${action}` }, 400);
     }
@@ -573,6 +577,43 @@ async function handleStats(supabase: any) {
   stats.total_activations = activationCount ?? 0;
 
   return json({ stats });
+}
+
+// ─── Versi minimum app per produk (force-update) ─────────────────────
+
+async function handleGetMinVersions(supabase: any) {
+  const { data, error } = await supabase
+    .from("app_min_versions")
+    .select("*")
+    .order("product", { ascending: true });
+  if (error) return json({ error: error.message }, 500);
+  return json({ versions: data ?? [] });
+}
+
+async function handleSetMinVersion(supabase: any, params: any) {
+  const { product, min_version, min_build, download_url } = params;
+  if (!product) return json({ error: "product required" }, 400);
+  // min_build = 0 → hapus baris (rollback: tidak ada force update).
+  if (!min_build || Number(min_build) <= 0) {
+    const { error } = await supabase
+      .from("app_min_versions")
+      .delete()
+      .eq("product", product);
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true, cleared: true });
+  }
+  const { error } = await supabase.from("app_min_versions").upsert(
+    {
+      product,
+      min_version: String(min_version ?? ""),
+      min_build: Number(min_build),
+      download_url: download_url ?? null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "product" }
+  );
+  if (error) return json({ error: error.message }, 500);
+  return json({ ok: true });
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────

@@ -34,6 +34,10 @@ export interface LicenseRecord {
   google_user_id?: string | null;
   activation_count: number;
   created_at: string;
+  // v2.2.57: versi app terakhir yang dipakai perangkat (diisi edge fn app_ping).
+  last_app_version?: string | null;
+  last_app_build?: number | null;
+  last_seen_at?: string | null;
 }
 
 export interface ActivationRecord {
@@ -191,4 +195,33 @@ export async function deleteLicense(
   licenseId: string
 ): Promise<{ ok: boolean; message: string }> {
   return call("delete", { license_id: licenseId });
+}
+
+// ── v2.2.57: versi minimum app per produk (force-update) ─────────────
+
+export interface MinVersionRecord {
+  product: string;
+  min_version: string;
+  min_build: number;
+  download_url: string | null;
+  updated_at: string;
+}
+
+export async function getMinVersions(): Promise<MinVersionRecord[]> {
+  const data = await call("get_min_versions");
+  return data.versions ?? [];
+}
+
+export async function setMinVersion(
+  product: string,
+  minVersion: string,
+  minBuild: number,
+  downloadUrl?: string | null
+): Promise<{ ok: boolean; cleared?: boolean }> {
+  return call("set_min_version", {
+    product,
+    min_version: minVersion,
+    min_build: minBuild,
+    download_url: downloadUrl ?? null,
+  });
 }

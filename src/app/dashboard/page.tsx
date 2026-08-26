@@ -12,6 +12,8 @@ import {
   generateKeys,
   revokeLicense,
   deleteLicense,
+  getMinVersions,
+  setMinVersion,
   PRODUCTS,
   TIERS,
   type LicenseRecord,
@@ -19,6 +21,7 @@ import {
   type LicenseStats,
   type LicenseTier,
   type ActivationRecord,
+  type MinVersionRecord,
 } from "@/lib/license-manager";
 import {
   listTutorials,
@@ -51,6 +54,12 @@ function formatDate(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// v2.2.57: device dianggap stale kalau tidak pernah ping > 7 hari.
+function isStale(lastSeenIso?: string | null): boolean {
+  if (!lastSeenIso) return false;
+  return Date.now() - new Date(lastSeenIso).getTime() > 7 * 24 * 60 * 60 * 1000;
 }
 
 function statusBadge(status: string): { bg: string; text: string; label: string } {
@@ -407,6 +416,9 @@ function LicensesTab() {
     <div>
       <h2 className="text-lg font-bold text-gray-900 mb-4">Daftar Lisensi</h2>
 
+      {/* v2.2.57: editor versi minimum per produk (force-update) */}
+      <MinVersionsCard />
+
       {/* Detail Modal */}
       {selectedLicense && (
         <LicenseDetailModal
@@ -616,6 +628,111 @@ function LicensesTab() {
 
 // ─── License Detail Modal ─────────────────────────────────────────────
 
+// ─── v2.2.57: Versi Minimum App per produk (force-update) ────────────
+
+function MinVersionsCard() {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<MinVersionRecord[]>([]);
+  const [loading, setLoading] = useState(false);
+  // draft per produk: {version, build, url}
+  const [draft, setDraft] = useState<Record<string, { v: string; b: string; u: string }>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const list = await getMinVersions();
+      setRows(list);
+      const d: Record<string, { v: string; b: string; u: string }> = {};
+      for (const r of list) d[r.product] = { v: r.min_version, b: String(r.min_build), u: r.download_url ?? "" };
+      setDraft(d);
+    } catch {
+      /* ignore */
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    if (open && rows.length === 0 && !loading) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  async function save(product: string) {
+    const cur = draft[product];
+    if (!cur) return;
+    setSaving(product);
+    try {
+      await setMinVersion(product, cur.v, Number(cur.b) || 0, cur.u || null);
+      await load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+    setSaving(null);
+  }
+
+  return (
+    <div className="bg-white border border-input-border rounded-2xl mb-6">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <div>
+          <p className="font-semibold text-gray-900 text-sm">Versi Minimum App (Update Wajib)</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            App di bawah build minimum akan diblokir & diminta update via browser
+          </p>
+        </div>
+        <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 space-y-3">
+          {loading && <p className="text-xs text-gray-400">Memuat…</p>}
+          {PRODUCTS.map((p) => {
+            const cur = draft[p.id] ?? { v: "", b: "", u: "" };
+            const existing = rows.find((r) => r.product === p.id);
+            return (
+              <div key={p.id} className="flex flex-wrap items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                <span className="text-sm font-medium text-gray-800 w-24 shrink-0">{p.name}</span>
+                <input
+                  value={cur.v}
+                  onChange={(e) => setDraft({ ...draft, [p.id]: { ...cur, v: e.target.value } })}
+                  placeholder="2.2.57"
+                  className="w-20 px-2 py-1.5 border border-input-border rounded-lg text-xs"
+                />
+                <input
+                  value={cur.b}
+                  onChange={(e) => setDraft({ ...draft, [p.id]: { ...cur, b: e.target.value.replace(/\D/g, "") } })}
+                  placeholder="build"
+                  className="w-16 px-2 py-1.5 border border-input-border rounded-lg text-xs"
+                />
+                <input
+                  value={cur.u}
+                  onChange={(e) => setDraft({ ...draft, [p.id]: { ...cur, u: e.target.value } })}
+                  placeholder="URL download APK (opsional)"
+                  className="flex-1 min-w-[180px] px-2 py-1.5 border border-input-border rounded-lg text-xs"
+                />
+                <button
+                  onClick={() => save(p.id)}
+                  disabled={saving === p.id}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium disabled:opacity-50"
+                >
+                  {saving === p.id ? "…" : existing ? "Update" : "Set"}
+                </button>
+                {existing && (
+                  <span className="text-[10px] text-green-600 font-medium">aktif</span>
+                )}
+              </div>
+            );
+          })}
+          <p className="text-[11px] text-gray-400">
+            Kosongkan build (= 0) lalu simpan untuk mematikan force-update produk tsb.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LicenseDetailModal({
   license,
   onClose,
@@ -667,6 +784,26 @@ function LicenseDetailModal({
             <DetailRow label="Pemilik" value={license.owner_email ?? "—"} />
             <DetailRow label="Google ID" value={license.google_user_id ?? "—"} />
             <DetailRow label="Dibuat" value={formatDate(license.created_at)} />
+            {/* v2.2.57: versi app terakhir yang dipakai perangkat */}
+            <DetailRow label="Versi App">
+              {license.last_app_build ? (
+                <span className="inline-flex items-center gap-2">
+                  <span>
+                    v{license.last_app_version || "?"} (build {license.last_app_build})
+                  </span>
+                  {isStale(license.last_seen_at) && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 border border-amber-200">
+                      Stale
+                    </span>
+                  )}
+                </span>
+              ) : (
+                "—"
+              )}
+            </DetailRow>
+            {license.last_seen_at && (
+              <DetailRow label="Terakhir Online" value={formatDate(license.last_seen_at)} />
+            )}
           </div>
 
           {/* Activations */}
