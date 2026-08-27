@@ -72,6 +72,16 @@ export function soundPublicUrl(filename: string): string {
   return publicFileUrl(filename);
 }
 
+/**
+ * URL untuk suara bawaan aplikasi (8 slot) — disajikan dari Next.js static
+ * asset di /public/defaults/{key}.wav. File ini sama dengan asset bawaan
+ * di nusa_kasir/assets/audio/ (sudah di-copy saat build web). Dipakai untuk
+ * preview bawaan di dashboard sebelum user upload file custom.
+ */
+export function defaultSoundUrl(slotKey: string): string {
+  return `/defaults/${slotKey}.wav`;
+}
+
 /** Upload/replace satu slot suara (.wav/.mp3/.ogg), lalu update manifest. */
 export async function uploadSound(file: File, slot: SoundSlotDef): Promise<SoundsManifest> {
   const ext = (file.name.split(".").pop() ?? "wav").toLowerCase();
