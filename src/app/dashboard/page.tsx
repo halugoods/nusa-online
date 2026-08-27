@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   verifyAdminKey,
   setAdminKey,
@@ -164,40 +165,18 @@ function buildBuyerMessage(opts: {
 // ─── Dashboard ────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
-  const [view, setView] = useState<View>("overview");
+  // Tab aktif berasal dari ?tab= di URL (single source = DashboardShell navbar).
+  // Panel dirender sesuai tab; tidak ada baris tab duplikat di sini.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const view: View =
+    tabParam === "licenses" || tabParam === "generate" ||
+    tabParam === "tutorials" || tabParam === "sounds"
+      ? tabParam
+      : "overview";
 
   return (
     <DashboardShell>
-      {/* Sidebar tabs (local state — Overview/Lisensi/Generate/Tutorial via
-          client switch; tab Audio/Sounds punya URL sendiri). */}
-      <div className="mb-4 flex gap-0 border-b border-gray-100 -mx-1">
-        {([
-          { v: "overview" as View, label: "Overview" },
-          { v: "licenses" as View, label: "Lisensi" },
-          { v: "generate" as View, label: "Generate" },
-          { v: "tutorials" as View, label: "Tutorial" },
-          { v: "sounds" as View, label: "Notifikasi" },
-        ]).map((t) => (
-          <button
-            key={t.v}
-            onClick={() => setView(t.v)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              view === t.v
-                ? "border-primary text-primary"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-        <a
-          href="/dashboard/audio"
-          className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 transition-colors"
-        >
-          Audio ↗
-        </a>
-      </div>
-
       {view === "overview" && <OverviewTab />}
       {view === "licenses" && <LicensesTab />}
       {view === "generate" && <GenerateTab />}

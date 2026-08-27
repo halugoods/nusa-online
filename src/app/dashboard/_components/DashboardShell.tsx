@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   verifyAdminKey,
   isAuthenticated,
@@ -13,9 +13,10 @@ import {
 // atau state lokal (sidebar di /dashboard).
 const TABS = [
   { id: "overview",  label: "Overview",  href: "/dashboard" },
-  { id: "licenses",  label: "Lisensi",   href: "/dashboard" },
-  { id: "generate",  label: "Generate",  href: "/dashboard" },
-  { id: "tutorials", label: "Tutorial",  href: "/dashboard" },
+  { id: "licenses",  label: "Lisensi",   href: "/dashboard?tab=licenses" },
+  { id: "generate",  label: "Generate",  href: "/dashboard?tab=generate" },
+  { id: "tutorials", label: "Tutorial",  href: "/dashboard?tab=tutorials" },
+  { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
   { id: "audio",     label: "Audio",     href: "/dashboard/audio" },
 ];
 
@@ -47,8 +48,12 @@ export default function DashboardShell({
   }
 
   const pathname = usePathname();
-  // Untuk /dashboard, aktifkan tab berdasarkan sidebar state (default: overview).
-  const effectiveActive = activeTab
+  const searchParams = useSearchParams();
+  // Untuk /dashboard, aktifkan tab berdasarkan query ?tab= atau path.
+  const tabFromQuery = searchParams.get("tab");
+  const effectiveActive =
+    activeTab
+    ?? tabFromQuery
     ?? (pathname === "/dashboard/audio" ? "audio"
      : pathname === "/dashboard/sounds" ? "sounds"
      : "overview");
