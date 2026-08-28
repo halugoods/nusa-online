@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   verifyAdminKey,
@@ -165,6 +165,17 @@ function buildBuyerMessage(opts: {
 // ─── Dashboard ────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="text-center py-12 text-gray-400 text-sm">Memuat...</div>}>
+      <DashboardInner />
+    </Suspense>
+  );
+}
+
+// useSearchParams() butuh Suspense boundary supaya /dashboard tetap bisa
+// di-prerender (tanpa ini: Error prerendering page → build gagal → Vercel
+// tidak pernah deploy → tab duplikat lama terus tampil).
+function DashboardInner() {
   // Tab aktif berasal dari ?tab= di URL (single source = DashboardShell navbar).
   // Panel dirender sesuai tab; tidak ada baris tab duplikat di sini.
   const searchParams = useSearchParams();

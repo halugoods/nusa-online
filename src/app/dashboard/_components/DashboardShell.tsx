@@ -30,6 +30,10 @@ export default function DashboardShell({
   const [authed, setAuthed] = useState(false);
   const [ready, setReady] = useState(false);
 
+  // Hooks dipanggil tanpa syarat (sebelum early-return) — rules of hooks.
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   useEffect(() => {
     setAuthed(isAuthenticated());
     setReady(true);
@@ -47,8 +51,6 @@ export default function DashboardShell({
     return <LoginScreen onLogin={() => setAuthed(true)} />;
   }
 
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   // Untuk /dashboard, aktifkan tab berdasarkan query ?tab= atau path.
   const tabFromQuery = searchParams.get("tab");
   const effectiveActive =
