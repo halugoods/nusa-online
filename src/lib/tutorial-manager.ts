@@ -78,7 +78,15 @@ const STORAGE_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object`;
 export async function uploadThumbnail(file: File, key: string): Promise<string> {
   const res = await fetch(`${STORAGE_URL}/tutorial-thumbnails/${key}`, {
     method: "PUT",
-    headers: { "Authorization": `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": file.type || "image/jpeg" },
+    headers: {
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      "Content-Type": file.type || "image/jpeg",
+      // Supabase Storage: header ini jadi cache-control objek. Public CDN
+      // menyimpan thumbnail → egress berulang per render berkurang drastis.
+      // (Gambar thumbnail tidak pernah berubah per key — key baru per upload.)
+      "x-upsert": "true",
+      "Cache-Control": "public, max-age=31536000, immutable",
+    },
     body: file,
   });
   if (!res.ok) throw new Error(`Upload gagal (${res.status})`);

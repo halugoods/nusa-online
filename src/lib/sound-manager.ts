@@ -60,7 +60,10 @@ function authHeaders(contentType?: string): HeadersInit {
 /** Baca manifest saat ini; null = belum ada custom sound sama sekali. */
 export async function fetchManifest(): Promise<SoundsManifest | null> {
   try {
-    const res = await fetch(manifestUrl(), { cache: "no-store" });
+    // Tanpa no-store: manifest jarang berubah (cuma pas upload/reset).
+    // Version naik tiap update → cache bust otomatis (app & dashboard
+    // bandingin version, bukan nama file). Mengurangi egress berulang.
+    const res = await fetch(manifestUrl());
     if (!res.ok) return null;
     return (await res.json()) as SoundsManifest;
   } catch {
