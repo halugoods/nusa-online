@@ -62,6 +62,16 @@ serve(async (req: Request) => {
     if (body.action === "test") {
       return await handleTest(body, isAdmin);
     }
+    // ── Riwayat chat cloud (app) — history / history_messages / history_delete ──
+    if (body.action === "history") {
+      return await handleGetHistory(body, isAdmin);
+    }
+    if (body.action === "history_messages") {
+      return await handleGetHistoryMessages(body, isAdmin);
+    }
+    if (body.action === "history_delete") {
+      return await handleDeleteHistory(body, isAdmin);
+    }
 
     const {
       messages,
@@ -336,6 +346,116 @@ function json(obj: unknown, status = 200): Response {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+// ── POST history — daftar sesi chat cloud milik owner (app: drawer riwayat) ──
+// Body: { action: "history", owner, limit? }
+// Hasil: [{ session_id, role, content, created_at }] terbaru dulu, 1 baris
+// per sesi (pesan user pertama sebagai judul).
+async function handleGetHistory(
+  body: Record<string, unknown>,
+  isAdmin: boolean
+): Promise<Response> {
+  const owner = String(body.owner ?? "").trim();
+  if (!owner) {
+    return json({ error: "owner is required" }, 400);
+  }
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+  const limit = Math.min(Math.max(Number(body.limit) || 30, 1), 100);
+  try {
+    const { data, error } = await supabase
+      .from("ai_chat_history")
+      .select("session_id, role, content, created_at")
+      .eq("owner", owner)
+      .eq("role", "user")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) return json({ error: error.message }, 500);
+
+    // dedup per session — ambil pesan user paling baru sebagai judul
+    const seen = new Set<string>();
+    const sessions: Record<string, unknown>[] = [];
+    for (const row of data ?? []) {
+      const sid = String(row.session_id ?? "");
+      if (!sid || seen.has(sid)) continue;
+      seen.add(sid);
+      const content = String(row.content ?? "").replace(/\s+/g, " ").trim();
+      sessions.push({
+        session_id: sid,
+        title: content.length > 60 ? content.slice(0, 60) + "…" : content,
+        created_at: row.created_at,
+      });
+    }
+    return json({ sessions });
+  } catch (err) {
+    console.error("history error:", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ── POST history_messages — isi pesan 1 sesi cloud (app: buka sesi lama) ──
+// Body: { action: "history_messages", owner, session_id, limit? }
+// Hasil: [{ role, content, tool_call_id, tool_name, tool_args, created_at }]
+async function handleGetHistoryMessages(
+  body: Record<string, unknown>,
+  isAdmin: boolean
+): Promise<Response> {
+  const owner = String(body.owner ?? "").trim();
+  const sessionId = String(body.session_id ?? "").trim();
+  if (!owner || !sessionId) {
+    return json({ error: "owner and session_id are required" }, 400);
+  }
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+  const limit = Math.min(Math.max(Number(body.limit) || 100, 1), 200);
+  try {
+    const { data, error } = await supabase
+      .from("ai_chat_history")
+      .select("role, content, tool_call_id, tool_name, tool_args, created_at")
+      .eq("owner", owner)
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    if (error) return json({ error: error.message }, 500);
+    return json({ messages: data ?? [] });
+  } catch (err) {
+    console.error("history_messages error:", err);
+    return json({ error: "Internal server error" }, 500);
+  }
+}
+
+// ── POST history_delete — hapus 1 sesi cloud (app: tombol hapus) ──
+// Body: { action: "history_delete", owner, session_id }
+async function handleDeleteHistory(
+  body: Record<string, unknown>,
+  isAdmin: boolean
+): Promise<Response> {
+  const owner = String(body.owner ?? "").trim();
+  const sessionId = String(body.session_id ?? "").trim();
+  if (!owner || !sessionId) {
+    return json({ error: "owner and session_id are required" }, 400);
+  }
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+  );
+  try {
+    const { error } = await supabase
+      .from("ai_chat_history")
+      .delete()
+      .eq("owner", owner)
+      .eq("session_id", sessionId);
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true });
+  } catch (err) {
+    console.error("history_delete error:", err);
+    return json({ error: "Internal server error" }, 500);
+  }
 }
 
 // ── Relay SSE dari provider ke client ──
