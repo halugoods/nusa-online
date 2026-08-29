@@ -12,6 +12,7 @@ import {
   getLicenseDetail,
   generateKeys,
   revokeLicense,
+  setLicenseStatus,
   deleteLicense,
   getMinVersions,
   setMinVersion,
@@ -21,6 +22,7 @@ import {
   type LicenseDetail,
   type LicenseStats,
   type LicenseTier,
+  type LicenseStatus,
   type ActivationRecord,
   type MinVersionRecord,
 } from "@/lib/license-manager";
@@ -77,8 +79,6 @@ function statusBadge(status: string): { bg: string; text: string; label: string 
       return { bg: "bg-red-50 text-red-700 border-red-200", text: "text-red-700", label: "Cancelled" };
     case "Expired":
       return { bg: "bg-gray-50 text-gray-500 border-gray-200", text: "text-gray-500", label: "Expired" };
-    case "Suspended":
-      return { bg: "bg-orange-50 text-orange-700 border-orange-200", text: "text-orange-700", label: "Suspended" };
     default:
       return { bg: "bg-gray-50 text-gray-700 border-gray-200", text: "text-gray-700", label: status };
   }
@@ -228,7 +228,6 @@ function OverviewTab() {
     { label: "Aktif", value: stats.Active ?? 0, color: "bg-green-50 text-green-700" },
     { label: "Cancelled", value: stats.Cancelled ?? 0, color: "bg-red-50 text-red-700" },
     { label: "Expired", value: stats.Expired ?? 0, color: "bg-gray-50 text-gray-600" },
-    { label: "Suspended", value: stats.Suspended ?? 0, color: "bg-orange-50 text-orange-700" },
     { label: "Total Aktivasi", value: stats.total_activations ?? 0, color: "bg-purple-50 text-purple-700" },
   ];
 
@@ -319,6 +318,27 @@ function LicensesTab() {
     }
   }
 
+  async function handleSetStatus(id: string) {
+    const status = prompt(
+      "Ubah status lisensi (Generated / Trial / Active / Cancelled / Expired):",
+      "Active"
+    );
+    if (!status) return;
+    const s = status.trim() as LicenseStatus;
+    if (!["Generated", "Trial", "Active", "Cancelled", "Expired"].includes(s)) {
+      alert("Status tidak valid.");
+      return;
+    }
+    const reason = prompt("Alasan (opsional):") ?? undefined;
+    try {
+      const res = await setLicenseStatus(id, s, reason);
+      alert(res.message);
+      fetchLicenses();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  }
+
   const totalPages = Math.ceil(total / limit);
 
   return (
@@ -349,7 +369,6 @@ function LicensesTab() {
           <option value="Active">Aktif</option>
           <option value="Cancelled">Cancelled</option>
           <option value="Expired">Expired</option>
-          <option value="Suspended">Suspended</option>
         </select>
 
         <select
@@ -470,7 +489,7 @@ function LicensesTab() {
                             >
                               Detail
                             </button>
-                            {lic.status !== "Cancelled" && lic.status !== "Expired" && lic.status !== "Suspended" && (
+                            {lic.status !== "Cancelled" && lic.status !== "Expired" && (
                               <button
                                 onClick={() => handleRevoke(lic.id)}
                                 className="px-2 py-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
@@ -478,6 +497,13 @@ function LicensesTab() {
                                 Cancel
                               </button>
                             )}
+                            <button
+                              onClick={() => handleSetStatus(lic.id)}
+                              className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Ubah status manual (mis. aktifkan lagi key yang kena auto-revoke)"
+                            >
+                              Ubah Status
+                            </button>
                             {lic.status === "Generated" && (lic.activation_count ?? 0) === 0 && (
                               <button
                                 onClick={() => handleDelete(lic.id)}

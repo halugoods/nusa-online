@@ -140,6 +140,8 @@ serve(async (req: Request) => {
         return handleDetail(supabase, params);
       case "revoke":
         return handleRevoke(supabase, params);
+      case "set_status":
+        return handleSetStatus(supabase, params);
       case "delete":
         return handleDelete(supabase, params);
       case "stats":
@@ -510,6 +512,63 @@ async function handleRevoke(supabase: any, params: any) {
   return json({ ok: true, message: "License cancelled" });
 }
 
+// ─── Manually set a license status (admin override) ────────────────────
+// Used by the admin dashboard to restore a key that was auto-revoked
+// (Expired → Cancelled after 7-day grace) back to Active after the owner
+// pays, or to cancel/suspend manually. Audited via license_events.
+async function handleSetStatus(supabase: any, params: any) {
+  const { license_id, status, reason } = params;
+  if (!license_id) return json({ error: "license_id required" }, 400);
+  if (!status) return json({ error: "status required" }, 400);
+
+  const allowed = ["Generated", "Trial", "Active", "Cancelled", "Expired"];
+  if (!allowed.includes(status)) {
+    return json({ error: `Invalid status: ${status}` }, 400);
+  }
+
+  const { data: lic } = await supabase
+    .from("licenses")
+    .select("status, expires_at")
+    .eq("id", license_id)
+    .single();
+  if (!lic) return json({ error: "License not found" }, 404);
+
+  // Lifetime keys have expires_at = null; putting them to Expired would be
+  // inconsistent (nothing to expire). Guard against that.
+  if (status === "Expired" && !lic.expires_at) {
+    return json(
+      { error: "Lisensi lifetime (tanpa tanggal kadaluarsa) tidak bisa dijadikan Expired" },
+      400
+    );
+  }
+
+  if (lic.status === status) {
+    return json({ ok: true, message: "Status sudah sama, tidak ada perubahan" });
+  }
+
+  const { error } = await supabase
+    .from("licenses")
+    .update({ status })
+    .eq("id", license_id);
+  if (error) return json({ error: error.message }, 500);
+
+  // Audit trail
+  await supabase.from("license_events").insert({
+    license_id,
+    event: "admin_set_status",
+    detail: JSON.stringify({
+      from: lic.status,
+      to: status,
+      reason: reason ?? null,
+    }),
+  });
+
+  return json({
+    ok: true,
+    message: `Status lisensi diubah: ${lic.status} → ${status}`,
+  });
+}
+
 // ─── Delete an unused license ────────────────────────────────────────
 
 async function handleDelete(supabase: any, params: any) {
@@ -562,7 +621,6 @@ async function handleStats(supabase: any) {
     Cancelled: 0,
     Trial: 0,
     Expired: 0,
-    Suspended: 0,
     total_activations: 0,
   };
 

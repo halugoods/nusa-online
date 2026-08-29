@@ -4,7 +4,7 @@ const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export type LicenseTier = 'trial' | '1month' | 'lifetime';
-export type LicenseStatus = "Generated" | "Trial" | "Active" | "Cancelled" | "Expired" | "Suspended";
+export type LicenseStatus = "Generated" | "Trial" | "Active" | "Cancelled" | "Expired";
 
 export const PRODUCTS: { id: string; name: string }[] = [
   { id: "nusa-kelontong", name: "Kelontong" },
@@ -59,7 +59,6 @@ export interface LicenseStats {
   Active: number;
   Cancelled: number;
   Expired: number;
-  Suspended: number;
   total_activations: number;
 }
 
@@ -189,6 +188,19 @@ export async function revokeLicense(
   licenseId: string
 ): Promise<{ ok: boolean; message: string }> {
   return call("revoke", { license_id: licenseId });
+}
+
+// ── v2.2.57+115: ubah status lisensi manual oleh admin (audited) ──────
+export async function setLicenseStatus(
+  licenseId: string,
+  status: LicenseStatus,
+  reason?: string
+): Promise<{ ok: boolean; message: string }> {
+  return call("set_status", {
+    license_id: licenseId,
+    status,
+    reason: reason ?? null,
+  });
 }
 
 export async function deleteLicense(
