@@ -16,6 +16,7 @@ const TABS = [
   { id: "licenses",  label: "Lisensi",   href: "/dashboard?tab=licenses" },
   { id: "generate",  label: "Generate",  href: "/dashboard?tab=generate" },
   { id: "tutorials", label: "Tutorial",  href: "/dashboard?tab=tutorials" },
+  { id: "ai",        label: "AI",        href: "/dashboard?tab=ai" },
   { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
   { id: "audio",     label: "Audio",     href: "/dashboard/audio" },
 ];

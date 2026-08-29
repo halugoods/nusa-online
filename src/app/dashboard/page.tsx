@@ -44,10 +44,11 @@ import {
 } from "@/lib/sound-manager";
 import DashboardShell from "./_components/DashboardShell";
 import NotifikasiTab from "./_components/NotifikasiTab";
+import AiTab from "./_components/AiTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate" | "tutorials" | "sounds";
+type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sounds";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -182,7 +183,7 @@ function DashboardInner() {
   const tabParam = searchParams.get("tab");
   const view: View =
     tabParam === "licenses" || tabParam === "generate" ||
-    tabParam === "tutorials" || tabParam === "sounds"
+    tabParam === "tutorials" || tabParam === "sounds" || tabParam === "ai"
       ? tabParam
       : "overview";
 
@@ -192,6 +193,7 @@ function DashboardInner() {
       {view === "licenses" && <LicensesTab />}
       {view === "generate" && <GenerateTab />}
       {view === "tutorials" && <TutorialsTab />}
+      {view === "ai" && <AiTab />}
       {view === "sounds" && <NotifikasiTab />}
     </DashboardShell>
   );
