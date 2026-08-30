@@ -250,28 +250,42 @@ async function checkSlug(supabase: any, params: any) {
   return jsonResponse({ available: !data, reason: data ? "taken" : "ok" });
 }
 
-// ─── Sync products (batch upsert) ──────────────────────────────────
+// ─── Sync products (batch upsert, dedupe by product_id) ─────────────
+// v2.2.57+120: DELETE+INSERT batch sebelumnya 500 "server sibuk" kalau
+// daftar produk mengandung product_id duplikat (id dobel dari restore/
+// import) → melanggar unique index (store_id, product_id). Sekarang:
+//   1. dedupe by product_id (last-wins) — sync tidak pernah gagal total
+//      gara-gara 1 produk bermasalah;
+//   2. DELETE all dulu (clean sync, produk non-online dihapus dari web),
+//      lalu INSERT batch yang sudah bersih.
 async function syncProducts(supabase: any, params: any) {
   const { store_id, products } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
   if (!products || !Array.isArray(products)) return jsonResponse({ error: "products array required" }, 400);
 
   const now = new Date().toISOString();
-  const rows = products.map((p: any) => ({
-    store_id,
-    product_id: p.product_id,
-    name: p.name,
-    category: p.category ?? "Lainnya",
-    price: p.price,
-    original_price: p.original_price ?? null,
-    stock: p.stock ?? 0,
-    image_url: p.image ?? "",
-    description: p.description ?? "",
-    is_published: p.is_published ?? true,
-    updated_at: now,
-  }));
+  const byId = new Map<number | string, any>();
+  for (const p of products) {
+    const pid = p.product_id;
+    if (pid === undefined || pid === null || pid === "") continue; // skip row tanpa id
+    // Last-wins: kalau product_id sama muncul 2x, pakai baris terakhir.
+    byId.set(pid, {
+      store_id,
+      product_id: pid,
+      name: p.name ?? "",
+      category: p.category ?? "Lainnya",
+      price: p.price ?? 0,
+      original_price: p.original_price ?? null,
+      stock: p.stock ?? 0,
+      image_url: p.image ?? "",
+      description: p.description ?? "",
+      is_published: p.is_published ?? true,
+      updated_at: now,
+    });
+  }
+  const rows = [...byId.values()];
 
-  // Delete old products, then insert new batch (clean sync).
+  // Delete old products, then insert clean batch (clean sync).
   const { error: delErr } = await supabase
     .from("online_products")
     .delete()
@@ -280,14 +294,17 @@ async function syncProducts(supabase: any, params: any) {
   if (delErr) return jsonResponse({ error: delErr.message }, 500);
 
   if (rows.length > 0) {
-    const { error: insErr } = await supabase
-      .from("online_products")
-      .insert(rows);
-
-    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    // Chunk insert biar tidak kena payload limit / row limit (batch besar).
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
+      const { error: insErr } = await supabase
+        .from("online_products")
+        .insert(chunk);
+      if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    }
   }
 
-  return jsonResponse({ ok: true, count: rows.length });
+  return jsonResponse({ ok: true, count: rows.length, skipped: products.length - rows.length });
 }
 
 // ─── Get orders for a store ────────────────────────────────────────
@@ -638,6 +655,8 @@ async function redeemPoints(supabase: any, params: any) {
 }
 
 // ─── Sync branches (cabang toko online + WA per cabang) ─────────────
+// Dedupe by name (unique idx_branches_store_name) — nama dobel tidak
+// boleh menggagalkan seluruh sync (v2.2.57+120).
 async function syncBranches(supabase: any, params: any) {
   const { store_id, branches } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
@@ -652,21 +671,32 @@ async function syncBranches(supabase: any, params: any) {
   if (delErr) return jsonResponse({ error: delErr.message }, 500);
 
   if (branches.length > 0) {
-    const rows = branches.map((b: any, i: number) => ({
-      store_id,
-      name: b.name ?? "",
-      phone: normalizePhoneTo08(b.phone || ""),
-      is_active: b.is_active ?? true,
-      sort: i,
-    }));
-    const { error: insErr } = await supabase.from("branches").insert(rows);
-    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    const byName = new Map<string, any>();
+    branches.forEach((b: any, i: number) => {
+      const name = String(b.name ?? "").trim();
+      if (!name) return;
+      byName.set(name, {
+        store_id,
+        name,
+        phone: normalizePhoneTo08(b.phone || ""),
+        is_active: b.is_active ?? true,
+        sort: i,
+      });
+    });
+    const rows = [...byName.values()];
+    if (rows.length > 0) {
+      const { error: insErr } = await supabase.from("branches").insert(rows);
+      if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    }
+    return jsonResponse({ ok: true, count: rows.length, skipped: branches.length - rows.length });
   }
 
-  return jsonResponse({ ok: true, count: branches.length });
+  return jsonResponse({ ok: true, count: 0 });
 }
 
 // ─── Sync promos (kupon online) ─────────────────────────────────────
+// Dedupe by code (unique idx_promos_store_code) — kode dobel tidak
+// boleh menggagalkan seluruh sync (v2.2.57+120).
 async function syncPromos(supabase: any, params: any) {
   const { store_id, promos } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
@@ -681,24 +711,33 @@ async function syncPromos(supabase: any, params: any) {
   if (delErr) return jsonResponse({ error: delErr.message }, 500);
 
   if (promos.length > 0) {
-    const rows = promos.map((p: any) => ({
-      store_id,
-      code: p.code ?? "",
-      title: p.title ?? p.code ?? "",
-      type: p.type ?? "persen", // persen | nominal
-      value: Number(p.value) || 0,
-      min_spend: Number(p.min_spend) || 0,
-      quota: Number(p.quota) ?? null,
-      limit_per_user: Number(p.limit_per_user) ?? null,
-      start_date: p.start_date ?? null,
-      end_date: p.end_date ?? null,
-      is_active: p.is_active ?? true,
-    }));
-    const { error: insErr } = await supabase.from("promos").insert(rows);
-    if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    const byCode = new Map<string, any>();
+    for (const p of promos) {
+      const code = String(p.code ?? "").trim().toUpperCase();
+      if (!code) continue;
+      byCode.set(code, {
+        store_id,
+        code,
+        title: p.title ?? p.code ?? "",
+        type: p.type ?? "persen", // persen | nominal
+        value: Number(p.value) || 0,
+        min_spend: Number(p.min_spend) || 0,
+        quota: p.quota === undefined || p.quota === null ? null : Number(p.quota),
+        limit_per_user: p.limit_per_user === undefined || p.limit_per_user === null ? null : Number(p.limit_per_user),
+        start_date: p.start_date ?? null,
+        end_date: p.end_date ?? null,
+        is_active: p.is_active ?? true,
+      });
+    }
+    const rows = [...byCode.values()];
+    if (rows.length > 0) {
+      const { error: insErr } = await supabase.from("promos").insert(rows);
+      if (insErr) return jsonResponse({ error: insErr.message }, 500);
+    }
+    return jsonResponse({ ok: true, count: rows.length, skipped: promos.length - rows.length });
   }
 
-  return jsonResponse({ ok: true, count: promos.length });
+  return jsonResponse({ ok: true, count: 0 });
 }
 
 // ─── Get promos (admin app read-back untuk CRUD kupon) ────────────
@@ -733,15 +772,22 @@ async function syncPrintFormConfigs(supabase: any, params: any) {
 
   if (configs.length === 0) return jsonResponse({ ok: true, count: 0 });
 
-  const rows = configs.map((c: any) => ({
-    store_id,
-    service_name: c.service_name ?? "",
-    fields_json: c.fields_json ?? null,
-    updated_at: new Date().toISOString(),
-  }));
+  // Dedupe by service_name — nama layanan dobel tidak menggagalkan sync.
+  const byService = new Map<string, any>();
+  for (const c of configs) {
+    const name = String(c.service_name ?? "").trim();
+    if (!name) continue;
+    byService.set(name, {
+      store_id,
+      service_name: name,
+      fields_json: c.fields_json ?? null,
+      updated_at: new Date().toISOString(),
+    });
+  }
+  const rows = [...byService.values()];
   const { error: insErr } = await supabase.from("print_form_configs").insert(rows);
   if (insErr) return jsonResponse({ error: insErr.message }, 500);
-  return jsonResponse({ ok: true, count: rows.length });
+  return jsonResponse({ ok: true, count: rows.length, skipped: configs.length - rows.length });
 }
 
 async function getPrintFormConfigs(supabase: any, params: any) {
