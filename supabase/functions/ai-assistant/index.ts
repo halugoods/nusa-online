@@ -159,7 +159,7 @@ serve(async (req: Request) => {
     }
 
     // ── System prompt + konteks toko ──
-    const systemPrompt = buildSystemPrompt(store_name);
+    const systemPrompt = buildSystemPrompt(store_name, tools);
 
     // ── Call provider (streaming SSE jika minta) ──
     if (!aiKey) {
@@ -584,9 +584,27 @@ function streamResponse(providerRes: Response, corsHeaders: Record<string, strin
   });
 }
 
-function buildSystemPrompt(store_name?: string): string {
+function buildSystemPrompt(store_name?: string, tools?: unknown[]): string {
   const context = store_name ? `\n\nKONTEKS TOKO:\nToko: ${store_name}` : "";
-  return `Kamu adalah AI Assistant untuk NUSA Kasir, aplikasi Point of Sale untuk warung/toko kelontong di Indonesia.
+
+  // Daftar nama tool yang benar-benar dikirim — biar model tidak mengarang
+  // tool lain yang tidak ada di variant ini.
+  const toolNames = (tools ?? [])
+    .map((t) =>
+      typeof t === "object" && t !== null
+        ? (t as Record<string, unknown>)?.function
+          ? String((t as Record<string, unknown>).function!["name"] ?? "")
+          : String((t as Record<string, unknown>)["name"] ?? "")
+        : ""
+    )
+    .filter(Boolean)
+    .join(", ");
+
+  return `Kamu adalah AI Assistant untuk NUSA Kasir, aplikasi Point of Sale untuk UMKM di Indonesia.
+
+KONTEKS TOKO:
+Toko: ${store_name ?? "(belum diisi)"}
+Tool yang tersedia: ${toolNames || "tidak ada"}
 
 Kamu BISA membantu dengan:
 - Menjawab pertanyaan tentang fitur NUSA Kasir (produk, transaksi, stok, pelanggan, laporan, dll)
@@ -598,9 +616,15 @@ Kamu TIDAK BISA:
 - Mengedit data langsung — minta user melakukannya sendiri di aplikasi
 - Melihat detail transaksi spesifik — hanya ringkasan
 
-Gunakan bahasa Indonesia yang ramah dan santai. Jawab singkat dan langsung.${context}
+ATURAN WAJIB (TIDAK BOLEH DILANGGAR):
+1. JANGAN PERNAH MENGARANG ANGKA. Data toko (omzet, jumlah produk, stok, transaksi, pelanggan, piutang, dll) HANYA boleh disebut setelah kamu memanggil tool yang sesuai (get_summary, get_monthly_summary, get_products, get_low_stock, get_transactions, get_top_products, get_customers, get_promos, get_employees, get_attendance, get_expenses, get_debts, get_suppliers).
+2. Kalau hasil tool menyebutkan ada data yang dipotong (mengandung "...hasil dipotong"), jangan menyebutkan angka di luar data yang terlihat.
+3. Kalau tidak ada tool yang relevan untuk pertanyaan user, jawab saja dengan saran/panduan — JANGAN membuat angka palsu dan JANGAN memanggil tool yang tidak tersedia di daftar di atas.
+4. Kalau kamu tidak tahu jawabannya, akui "saya tidak yakin" daripada menebak.
+5. Jawab dalam bahasa Indonesia yang ramah dan santai. Jawab singkat dan langsung ke poinnya.
+6. Kalau user bertanya data yang TIDAK tersedia di tool (misal detail 1 transaksi, laba bersih per produk, perbandingan antar bulan), jelaskan bahwa data itu tidak tersedia dan tawarkan apa yang bisa dibantu.
 
-Jika kamu perlu data detail dari toko (produk, stok, transaksi, pelanggan, dll), gunakan TOOL yang tersedia (get_products, get_low_stock, get_transactions, get_summary, get_customers, get_top_products, get_promos, get_employees, get_attendance, get_expenses, get_debts, get_suppliers). JANGAN mengarang angka — panggil tool dulu.`;
+Gunakan bahasa Indonesia yang ramah dan santai. Jawab singkat dan langsung.${context}`;
 }
 
 function fallbackReply(): string {
