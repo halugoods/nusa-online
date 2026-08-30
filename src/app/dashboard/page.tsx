@@ -45,10 +45,11 @@ import {
 import DashboardShell from "./_components/DashboardShell";
 import NotifikasiTab from "./_components/NotifikasiTab";
 import AiTab from "./_components/AiTab";
+import SpreadsheetsTab from "./_components/SpreadsheetsTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sounds";
+type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -183,7 +184,8 @@ function DashboardInner() {
   const tabParam = searchParams.get("tab");
   const view: View =
     tabParam === "licenses" || tabParam === "generate" ||
-    tabParam === "tutorials" || tabParam === "sounds" || tabParam === "ai"
+    tabParam === "tutorials" || tabParam === "sounds" ||
+    tabParam === "ai" || tabParam === "sheets"
       ? tabParam
       : "overview";
 
@@ -194,6 +196,7 @@ function DashboardInner() {
       {view === "generate" && <GenerateTab />}
       {view === "tutorials" && <TutorialsTab />}
       {view === "ai" && <AiTab />}
+      {view === "sheets" && <SpreadsheetsTab />}
       {view === "sounds" && <NotifikasiTab />}
     </DashboardShell>
   );
