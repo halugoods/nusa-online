@@ -169,14 +169,22 @@ serve(async (req: Request) => {
     }
 
     const stream = body.stream === true;
-    const providerBody = {
+    // Model reasoning (o-series / gpt-oss / deepseek-r1 / kimi-k2) memakai
+    // budget max_tokens untuk "berpikir" dulu. Kalau max_tokens kecil, sisa
+    // budget untuk jawaban nyaris nol → gejala: balasan cuma beberapa huruf
+    // ("OK") & tool call tidak sempat terpanggil. Naikkan cap khusus model
+    // reasoning, dan jangan kirim temperature (tidak didukung sebagian model
+    // reasoning, mis. o1/o3 di beberapa provider).
+    const isReasoningModel =
+      /(gpt-oss|o1\b|o3|o4|deepseek-r1|kimi-k2|reasoner)/i.test(aiModel);
+    const providerBody: Record<string, unknown> = {
       model: aiModel,
       messages: [
         { role: "system", content: systemPrompt },
         ...messages.slice(-20),
       ],
-      max_tokens: 800,
-      temperature: 0.7,
+      max_tokens: isReasoningModel ? 4096 : 800,
+      ...(isReasoningModel ? {} : { temperature: 0.7 }),
       ...(tools && tools.length > 0 ? { tools: tools as unknown[] } : {}),
       ...(stream ? { stream: true } : {}),
     };
@@ -211,13 +219,17 @@ serve(async (req: Request) => {
     // Non-streaming: parse JSON biasa
     const data = await providerRes.json();
     const choice = data.choices?.[0]?.message;
-    const reply =
-      choice?.content ?? choice?.reasoning_content ?? "Maaf, tidak bisa menjawab saat ini.";
     const rawToolCalls = choice?.tool_calls ?? null;
-
-    return new Response(JSON.stringify({ reply, tool_calls: rawToolCalls }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const reasoning = choice?.reasoning_content ?? null;
+    const reply = choice?.content ?? "Maaf, tidak bisa menjawab saat ini.";
+    // `reasoning_content` (hasil berpikir model reasoning) TIDAK dilampirkan
+    // sebagai jawaban — app lama akan merendernya sebagai teks jawaban & terlihat
+    // seperti balasan "berpikir". Sertakan sebagai field terpisah `reasoning`
+    // (diabaikan app lama, siap dipakai app baru nanti).
+    return new Response(
+      JSON.stringify({ reply, tool_calls: rawToolCalls, ...(reasoning ? { reasoning } : {}) }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   } catch (err) {
     console.error("ai-assistant error:", err);
     return new Response(JSON.stringify({ error: "Internal server error" }), {
@@ -328,6 +340,11 @@ async function handleTest(
 
   const started = Date.now();
   try {
+    // Model reasoning butuh budget token untuk "berpikir" — pakai cap 1024
+    // biar hasil tes merepresentasikan perilaku asli (bukan kepotong jadi
+    // balasan 1-3 huruf).
+    const isReasoningModel =
+      /(gpt-oss|o1\b|o3|o4|deepseek-r1|kimi-k2|reasoner)/i.test(model);
     const providerRes = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
@@ -340,7 +357,7 @@ async function handleTest(
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: "Balas singkat: OK" }],
-        max_tokens: 10,
+        max_tokens: isReasoningModel ? 1024 : 10,
       }),
     });
     const latencyMs = Date.now() - started;
@@ -518,10 +535,21 @@ function streamResponse(providerRes: Response, corsHeaders: Record<string, strin
               const chunk = JSON.parse(payload);
               const delta = chunk.choices?.[0]?.delta;
               if (!delta) continue;
-              const text = delta.content ?? delta.reasoning_content ?? "";
+              // Hanya konten final yang jadi teks jawaban; `reasoning_content`
+              // (proses berpikir) dikirim sebagai field terpisah `reasoning`
+              // supaya tidak bocor ke bubble jawaban app.
+              const text = delta.content ?? "";
               if (text) {
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify({ delta: text })}\n\n`)
+                );
+              }
+              const reasoning = delta.reasoning_content ?? "";
+              if (reasoning) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ reasoning })}\n\n`
+                  )
                 );
               }
               // Tool call delta (jarang di stream, tapi didukung)
