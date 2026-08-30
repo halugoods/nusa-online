@@ -100,6 +100,10 @@ serve(async (req: Request) => {
     );
 
     // ── Load provider config dari ai_settings (fallback default) ──
+    // Prioritas: config per-owner (app menyimpan sendiri) → config global
+    // owner="*" (dashboard admin) → default OpenRouter. Tanpa fallback global,
+    // setting yang disimpan di /dashboard (owner="*") TIDAK pernah dipakai app
+    // karena app mengirim owner=UID akunnya.
     let aiBase = DEFAULT_AI_BASE;
     let aiKey = DEFAULT_AI_KEY;
     let aiModel = DEFAULT_AI_MODEL;
@@ -116,6 +120,19 @@ serve(async (req: Request) => {
           if (cfg.api_key) aiKey = cfg.api_key;
           if (cfg.model) aiModel = cfg.model;
           isCustom = cfg.is_custom ?? false;
+        } else {
+          // Tidak ada config khusus owner → coba config global dari dashboard.
+          const { data: globalCfg } = await supabase
+            .from("ai_settings")
+            .select("base_url, api_key, model, is_custom")
+            .eq("owner", "*")
+            .maybeSingle();
+          if (globalCfg) {
+            if (globalCfg.base_url) aiBase = globalCfg.base_url;
+            if (globalCfg.api_key) aiKey = globalCfg.api_key;
+            if (globalCfg.model) aiModel = globalCfg.model;
+            isCustom = globalCfg.is_custom ?? false;
+          }
         }
       } catch (_) {
         // config optional — pakai default
@@ -227,7 +244,19 @@ async function handleGetSettings(req: Request): Promise<Response> {
         .select("base_url, model, is_custom, updated_at")
         .eq("owner", owner)
         .maybeSingle();
-      if (data) cfg = data as Record<string, unknown>;
+      // App mengirim owner=UID akunnya — kalau tidak ada config khusus owner,
+      // tampilkan config global (owner="*") dari dashboard supaya status
+      // provider di app = yang benar-benar dipakai.
+      if (data) {
+        cfg = data as Record<string, unknown>;
+      } else {
+        const { data: globalCfg } = await supabase
+          .from("ai_settings")
+          .select("base_url, model, is_custom, updated_at")
+          .eq("owner", "*")
+          .maybeSingle();
+        if (globalCfg) cfg = globalCfg as Record<string, unknown>;
+      }
     } catch (_) {}
   }
   return new Response(
