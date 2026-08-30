@@ -258,32 +258,67 @@ async function checkSlug(supabase: any, params: any) {
 //      gara-gara 1 produk bermasalah;
 //   2. DELETE all dulu (clean sync, produk non-online dihapus dari web),
 //      lalu INSERT batch yang sudah bersih.
+// v2.2.57+121: tambah logging + validasi supaya error 500 ke user (mis.
+// keuanganku96) bisa cepat dilacak di dashboard. Validasi:
+//   - nama kosong → skip (bukan error fatal, hanya skip)
+//   - image > 2048 char → truncate (Supabase TEXT limit aman, tapi kalau
+//     URL CDN panjang banget tetap disimpan apa adanya; truncate hanya
+//     kalau benar2 melewati batas wajar — sebagai pengaman terakhir).
 async function syncProducts(supabase: any, params: any) {
   const { store_id, products } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
   if (!products || !Array.isArray(products)) return jsonResponse({ error: "products array required" }, 400);
 
+  // v2.2.57+121: cek dulu store_id valid (ada di tabel stores) — kalau tidak,
+  // insert akan gagal FK constraint → 500 "server sibuk" membingungkan user.
+  // Beri pesan jelas: user harus selesaikan aktivasi toko dulu (upsert_store).
+  // v2.2.57+121: cek dulu store_id valid (ada di tabel store_settings) —
+  // kalau tidak, insert akan gagal FK constraint → 500 "server sibuk"
+  // membingungkan user. Beri pesan jelas: user harus selesaikan aktivasi
+  // toko dulu (upsert_store).
+  const { data: storeExists, error: storeErr } = await supabase
+    .from("store_settings")
+    .select("store_id")
+    .eq("store_id", store_id)
+    .maybeSingle();
+  if (storeErr) {
+    console.error("[online-store] sync_products store-check failed:", storeErr.message);
+    return jsonResponse({ error: "store_check_failed: " + storeErr.message }, 500);
+  }
+  if (!storeExists) {
+    console.warn(`[online-store] sync_products store_id '${store_id}' not in store_settings`);
+    return jsonResponse({
+      error: "store_not_found",
+      message: "Toko online belum diaktifkan. Buka menu 'Atur Toko Online' dan selesaikan setup dulu.",
+      store_id,
+    }, 422);
+  }
+
   const now = new Date().toISOString();
   const byId = new Map<number | string, any>();
+  let skippedNoName = 0;
   for (const p of products) {
     const pid = p.product_id;
-    if (pid === undefined || pid === null || pid === "") continue; // skip row tanpa id
-    // Last-wins: kalau product_id sama muncul 2x, pakai baris terakhir.
+    if (pid === undefined || pid === null || pid === "") continue;
+    const name = (p.name ?? "").toString().trim();
+    if (!name) { skippedNoName++; continue; } // skip baris tanpa nama (anti-error)
+    const img = (p.image ?? "").toString();
     byId.set(pid, {
       store_id,
       product_id: pid,
-      name: p.name ?? "",
+      name,
       category: p.category ?? "Lainnya",
-      price: p.price ?? 0,
-      original_price: p.original_price ?? null,
-      stock: p.stock ?? 0,
-      image_url: p.image ?? "",
+      price: Number(p.price ?? 0),
+      original_price: p.original_price != null ? Number(p.original_price) : null,
+      stock: Number(p.stock ?? 0),
+      image_url: img.length > 4096 ? "" : img, // safety: kosongkan URL absurd panjang
       description: p.description ?? "",
       is_published: p.is_published ?? true,
       updated_at: now,
     });
   }
   const rows = [...byId.values()];
+  console.log(`[online-store] sync_products store=${store_id} incoming=${products.length} dedupe=${rows.length} skippedNoName=${skippedNoName}`);
 
   // Delete old products, then insert clean batch (clean sync).
   const { error: delErr } = await supabase
@@ -291,7 +326,10 @@ async function syncProducts(supabase: any, params: any) {
     .delete()
     .eq("store_id", store_id);
 
-  if (delErr) return jsonResponse({ error: delErr.message }, 500);
+  if (delErr) {
+    console.error("[online-store] sync_products delete failed:", delErr.message);
+    return jsonResponse({ error: "delete_failed: " + delErr.message }, 500);
+  }
 
   if (rows.length > 0) {
     // Chunk insert biar tidak kena payload limit / row limit (batch besar).
@@ -300,11 +338,14 @@ async function syncProducts(supabase: any, params: any) {
       const { error: insErr } = await supabase
         .from("online_products")
         .insert(chunk);
-      if (insErr) return jsonResponse({ error: insErr.message }, 500);
+      if (insErr) {
+        console.error("[online-store] sync_products insert failed at chunk", i, ":", insErr.message);
+        return jsonResponse({ error: "insert_failed: " + insErr.message, at: i }, 500);
+      }
     }
   }
 
-  return jsonResponse({ ok: true, count: rows.length, skipped: products.length - rows.length });
+  return jsonResponse({ ok: true, count: rows.length, skipped: products.length - rows.length, skippedNoName });
 }
 
 // ─── Get orders for a store ────────────────────────────────────────
