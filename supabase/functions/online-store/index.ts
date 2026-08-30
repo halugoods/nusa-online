@@ -90,7 +90,8 @@ serve(async (req: Request) => {
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
   } catch (e) {
-    return jsonResponse({ error: e.message }, 500);
+    const msg = e instanceof Error ? e.message : String(e);
+    return jsonResponse({ error: msg }, 500);
   }
 });
 
@@ -138,13 +139,14 @@ async function upsertStore(supabase: any, params: any) {
     .eq("user_id", uid)
     .eq("variant", varId)
     .maybeSingle();
-  const { data: legacyRow } = uid
-    ? await supabase
-        .from("store_settings")
-        .select("store_id")
-        .eq("store_id", store_id)
-        .maybeSingle()
-    : { data: null };
+  // SELALU query legacy by store_id — user tanpa Google login (user_id null)
+  // tetap harus bisa UPDATE row lama; kalau hanya query saat uid, mereka
+  // jatuh ke INSERT yang bentrok → 500 "server sibuk" (fix v2.2.57+116).
+  const { data: legacyRow } = await supabase
+    .from("store_settings")
+    .select("store_id")
+    .eq("store_id", store_id)
+    .maybeSingle();
 
   // Slug unik per (user_id, variant): cek hanya antar row MILIK USER yang
   // bukan row target. Row user lain tidak menghalangi (anti rebutan slug).
@@ -481,7 +483,8 @@ async function applyOrderToCustomer(supabase: any, storeId: string, order: any, 
       }
     }
   } catch (e) {
-    console.warn("[applyOrderToCustomer] failed (non-blocking):", e.message);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[applyOrderToCustomer] failed (non-blocking):", msg);
   }
 }
 
@@ -553,7 +556,8 @@ async function submitOrder(supabase: any, params: any) {
       });
     }
   } catch (e) {
-    console.warn("[submitOrder] customer upsert failed (non-blocking):", e.message);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[submitOrder] customer upsert failed (non-blocking):", msg);
   }
 
   // WA link tujuan: store.whatsapp (08xx → 62xx).
