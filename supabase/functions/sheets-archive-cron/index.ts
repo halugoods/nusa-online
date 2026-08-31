@@ -12,7 +12,7 @@
 // SETUP (sekali, via SQL Editor — token CLI di OS keyring):
 //
 //   select cron.schedule(
-//     'nusa-sheets-archive', '0 18 2 * *',
+//     'nusa-sheets-archive', '0 18 1 * *',
 //     $$ select net.http_post(
 //          url := 'https://sakeuhcbcnueplzlkltm.supabase.co/functions/v1/sheets-archive-cron',
 //          headers := jsonb_build_object('x-admin-key', '280303', 'Content-Type', 'application/json'),
@@ -20,7 +20,7 @@
 //        ) $$
 //   );
 //
-//   (jadwal: tanggal 2 tiap bulan 18:00 UTC = 01:00 WIB — di luar jam sibuk)
+//   (jadwal: tanggal 1 18:00 UTC = tanggal 2, 01:00 WIB — di luar jam sibuk)
 // ============================================================================
 
 import {
