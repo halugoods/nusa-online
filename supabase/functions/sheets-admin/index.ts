@@ -181,6 +181,69 @@ async function sheetsShare(
   }
 }
 
+// ─── Resolve sheetId asli Google (Bug fix "no sheet with id: 0") ─────────
+// Spreadsheet dibuat via API dengan daftar sheet → Google memberi sheetId
+// RANDOM (tidak dijamin 0,1,2…). App mengirim request format dengan sheetId =
+// INDEX tab (0-9). Server resolve dari `spreadsheets.get` lalu terjemahkan
+// SEMUA request batchUpdate sebelum diteruskan ke Google API.
+
+/** Baca sheetId asli semua sheet: map title→sheetId + index→sheetId. */
+async function resolveSheetIds(
+  token: string,
+  spreadsheetId: string,
+): Promise<{ byTitle: Map<string, number>; byIndex: Map<number, number> }> {
+  const data = await googleFetch(
+    token,
+    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties(sheetId,title)`,
+  );
+  const byTitle = new Map<string, number>();
+  const byIndex = new Map<number, number>();
+  const sheets: any[] = data?.sheets ?? [];
+  sheets.forEach((s: any, idx: number) => {
+    const props = s?.properties;
+    if (props && typeof props.sheetId === "number") {
+      byIndex.set(idx, props.sheetId);
+      if (props.title) byTitle.set(props.title, props.sheetId);
+    }
+  });
+  return { byTitle, byIndex };
+}
+
+/** Terjemahkan sheetId INDEX (0-9) / title → sheetId asli Google, rekursif. */
+function translateSheetIds(
+  requests: any[],
+  byTitle: Map<string, number>,
+  byIndex: Map<number, number>,
+): any[] {
+  const resolve = (v: any, title?: string): any => {
+    if (typeof v !== "number") return v;
+    // Kalau request menyertakan title → resolve by title dulu (lebih tepat
+    // walau tab sudah dipindah user).
+    if (title && byTitle.has(title)) return byTitle.get(title);
+    const byIdx = byIndex.get(v);
+    return byIdx !== undefined ? byIdx : v; // tak dikenal → biarkan (aman)
+  };
+  const walk = (node: any): any => {
+    if (node === null || typeof node !== "object") return node;
+    const title = (node?.properties && typeof node.properties.title === "string")
+      ? node.properties.title
+      : undefined;
+    if (Array.isArray(node)) return node.map((n) => walk(n));
+    const out: any = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "sheetId") {
+        out[key] = resolve(value, title);
+      } else if (value && typeof value === "object") {
+        out[key] = walk(value);
+      } else {
+        out[key] = value;
+      }
+    }
+    return out;
+  };
+  return requests.map((r) => walk(r));
+}
+
 async function sheetsWrite(
   token: string,
   spreadsheetId: string,
@@ -197,11 +260,14 @@ async function sheetsWrite(
       body: JSON.stringify({ values }),
     },
   );
-  // Teruskan request format JSON apa adanya (template yang dikirim app).
+  // Teruskan request format JSON (template yang dikirim app) — TAPI sheetId
+  // index (0-9) diterjemahkan ke sheetId asli Google dulu (Bug fix di atas).
   if (Array.isArray(requests) && requests.length > 0) {
+    const { byTitle, byIndex } = await resolveSheetIds(token, spreadsheetId);
+    const translated = translateSheetIds(requests, byTitle, byIndex);
     await googleFetch(token, `${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
       method: "POST",
-      body: JSON.stringify({ requests }),
+      body: JSON.stringify({ requests: translated }),
     });
   }
 }
