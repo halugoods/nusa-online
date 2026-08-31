@@ -67,8 +67,14 @@ supabase functions deploy sheets-admin --project-ref sakeuhcbcnueplzlkltm
 1. Buka dashboard NUSA → tab **Spreadsheet**
 2. Klik **Login Google** → tab baru ke halaman izin Google
 3. Pilih **akun company NUSA** → izinkan
-4. Google tampilkan **kode** → salin → tempel di kotak → **Hubungkan Google**
+4. Browser diarahkan ke `http://127.0.0.1:43210` → koneksi gagal/tidak bisa dibuka
+   (**itu NORMAL** — tidak ada server lokal). Salin **kode** dari address bar
+   (mulai `4/0…` atau `4%2F0…`) → tempel di kotak dashboard → **Hubungkan Google**
 5. Klik **Test Koneksi** → harusnya ✅ + link spreadsheet uji
+
+> Redirect memakai **loopback** `http://127.0.0.1:43210` karena OOB paste-code
+> (`urn:ietf:wg:oauth:2.0:oob`) sudah di-deprecate Google untuk client baru.
+> Loopback tidak perlu didaftarkan di Google Console.
 
 ---
 

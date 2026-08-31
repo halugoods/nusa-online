@@ -56,6 +56,12 @@ function json(body: unknown, status = 200) {
 // Setiap panggilan: tukar refresh token → access token (drive.file scope).
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file";
+// Redirect loopback, bukan urn:ietf:wg:oauth:2.0:oob — OOB sudah di-deprecate
+// Google untuk client baru (2022). Browser diarahkan ke http://127.0.0.1:43210
+// (koneksi ditolak karena tidak ada server lokal — NORMAL), tapi kode auth ada
+// di address bar → user salin → paste di dashboard. Loopback tidak perlu
+// didaftarkan di Google Console.
+const OAUTH_REDIRECT_URI = "http://127.0.0.1:43210";
 
 /** Baca refresh token + email owner dari sheets_settings. */
 async function getOauthState(supabase: any): Promise<{
@@ -219,11 +225,11 @@ async function handleOAuthStatus(supabase: any): Promise<Response> {
   });
 }
 
-/** Bangun URL consent Google (paste-code flow, drive.file, offline). */
+/** Bangun URL consent Google (loopback paste-code flow, drive.file, offline). */
 function buildConsentUrl(): string {
   const params = new URLSearchParams({
     client_id: OAUTH_CLIENT_ID,
-    redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
+    redirect_uri: OAUTH_REDIRECT_URI,
     response_type: "code",
     scope: OAUTH_SCOPE,
     access_type: "offline",
@@ -240,8 +246,15 @@ async function handleOAuthConsentUrl(): Promise<Response> {
 }
 
 async function handleOAuthCallback(supabase: any, body: any): Promise<Response> {
-  const code = typeof body.code === "string" ? body.code.trim() : "";
+  let code = typeof body.code === "string" ? body.code.trim() : "";
   if (!code) return json({ error: "Kode OAuth wajib diisi." }, 400);
+  // Kode dari address bar bisa ter-encode (4%2F0…) atau sudah di-decode
+  // (4/0…) — normalisasi biar keduanya lolos saat token exchange.
+  try {
+    code = decodeURIComponent(code);
+  } catch {
+    // code tidak punya sequence encode — biarkan apa adanya.
+  }
   if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
     return json({ error: "GOOGLE_OAUTH_CLIENT_ID / SECRET belum di-set di Supabase." }, 500);
   }
@@ -255,7 +268,7 @@ async function handleOAuthCallback(supabase: any, body: any): Promise<Response> 
       client_secret: OAUTH_CLIENT_SECRET,
       code,
       grant_type: "authorization_code",
-      redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
+      redirect_uri: OAUTH_REDIRECT_URI,
     }),
   });
   if (!res.ok) {

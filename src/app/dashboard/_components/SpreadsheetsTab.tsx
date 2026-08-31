@@ -199,8 +199,11 @@ export default function SpreadsheetsTab() {
                 izinkan akses.
               </li>
               <li>
-                Google menampilkan <b>kode</b> — salin kodenya, tempel di kotak bawah,
-                lalu klik <b>Hubungkan</b>.
+                Browser diarahkan ke <span className="font-mono">127.0.0.1</span>{" "}
+                (koneksi gagal — <b>itu normal</b>). Salin <b>kode</b> dari address bar
+                (mulai <span className="font-mono">4/0…</span> atau{" "}
+                <span className="font-mono">4%2F0…</span>), tempel di kotak bawah, lalu
+                klik <b>Hubungkan</b>.
               </li>
             </ol>
 
