@@ -1,27 +1,32 @@
 // ============================================================================
-// NUSA KASIR — Google Sheets Terpusat (Company API)
+// NUSA KASIR — Google Sheets Terpusat (Company API, OAuth Company Account)
 // ============================================================================
 // Edge function yang menghubungkan app NUSA Kasir + dashboard admin ke
-// Google Sheets atas nama SERVICE ACCOUNT milik NUSA (bukan akun per-user).
+// Google Sheets atas nama COMPANY ACCOUNT (akun Google pemilik NUSA, bukan
+// service account, bukan akun per-user).
 //
-// Kredensial (service account JSON) disimpan di tabel `sheets_settings`
-// (diisi admin via dashboard). App tidak perlu login Google lagi — cukup
-// kirim `user_id` (canonical UID) + rows + request JSON, server yang
-// menulis spreadsheet atas nama service account.
+// Kredensial (OAuth refresh token) disimpan di tabel `sheets_settings`
+// (diisi admin via dashboard: login Google sekali → refresh token tersimpan).
+// App tidak perlu login Google lagi — cukup kirim `user_id` (canonical UID)
+// + rows + request JSON, server yang menulis spreadsheet atas nama company.
 //
 // SETUP SUPABASE DASHBOARD (secret, wajib):
 //   NUSA_ADMIN_KEY = 280303   (sama dengan edge fn admin lain)
+//   GOOGLE_OAUTH_CLIENT_ID     = Client ID OAuth (Google Cloud)
+//   GOOGLE_OAUTH_CLIENT_SECRET = Client Secret OAuth
 //
 // ACTIONS:
 //   Admin (header `x-admin-key`):
-//     save_credential  {service_account_json}  → validasi + simpan (enabled=true)
-//     test_credential  {}                      → buat spreadsheet uji, buktikan token jalan
-//     list_users       {}                      → seluruh sheets_registry + link + status
+//     oauth_status      {}                      → info akun Google terhubung (email) + enabled
+//     oauth_consent_url {}                      → URL consent Google (paste-code flow) untuk dashboard
+//     oauth_callback    {code}                  → tukar OAuth code → refresh token → simpan
+//     test_credential   {}                      → buat spreadsheet uji, buktikan token jalan
+//     list_users        {}                      → seluruh sheets_registry + link + status
 //   User app (anon, identitas di body):
-//     get_link         {user_id}               → spreadsheet_url yang sudah ada (404 kalau belum)
+//     get_link          {user_id}               → spreadsheet_url yang sudah ada (404 kalau belum)
 //     create_spreadsheet {user_id, email, store_name, variant}
 //                                                → buat spreadsheet baru + share ke email user
-//     write            {user_id, spreadsheet_id, tab, values[], requests[]}
+//     write             {user_id, spreadsheet_id, tab, values[], requests[]}
 //                                                → tulis data + format (validasi kepemilikan)
 // ============================================================================
 
@@ -36,6 +41,8 @@ const corsHeaders = {
 };
 
 const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "nusa-admin-2024";
+const OAUTH_CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
+const OAUTH_CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET") ?? "";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -44,101 +51,59 @@ function json(body: unknown, status = 200) {
   });
 }
 
-// ─── Google service account auth (JWT RS256 + token exchange) ────────────
-// Tanpa SDK berat — generate JWT assertion lalu tukar di OAuth2 token
-// endpoint. Scope: drive.file (hanya file yang dibuat sendiri oleh service
-// account — spreadsheet buatan kita otomatis boleh ditulis).
-const SHEETS_SCOPE = "https://www.googleapis.com/auth/drive.file";
+// ─── Google OAuth (company account) auth ─────────────────────────────────
+// Refresh token dari login admin disimpan di `sheets_settings.oauth_refresh_token`.
+// Setiap panggilan: tukar refresh token → access token (drive.file scope).
+const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
+const OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file";
 
-function parseServiceAccount(raw: string): {
-  clientEmail: string;
-  privateKey: string;
-} {
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error("Service account JSON tidak valid — cek formatnya.");
-  }
-  const clientEmail = parsed["client_email"];
-  const privateKey = parsed["private_key"];
-  if (typeof clientEmail !== "string" || clientEmail === "") {
-    throw new Error("JSON tidak punya client_email — bukan file service account.");
-  }
-  if (typeof privateKey !== "string" || privateKey === "") {
-    throw new Error("JSON tidak punya private_key — bukan file service account.");
-  }
-  return { clientEmail, privateKey };
+/** Baca refresh token + email owner dari sheets_settings. */
+async function getOauthState(supabase: any): Promise<{
+  refreshToken: string;
+  ownerEmail: string;
+  enabled: boolean;
+}> {
+  const { data, error } = await supabase
+    .from("sheets_settings")
+    .select("oauth_refresh_token, oauth_owner_email, enabled")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw new Error(`Gagal baca sheets_settings: ${error.message}`);
+  const enabled = data?.enabled === true;
+  const refreshToken = data?.oauth_refresh_token ?? "";
+  const ownerEmail = data?.oauth_owner_email ?? "";
+  return { refreshToken, ownerEmail, enabled };
 }
 
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function base64UrlDecode(s: string): Uint8Array {
-  const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
-  const b64 = s.replace(/-/g, "+").replace(/_/g, "/") + pad;
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
-async function getAccessToken(serviceAccountJson: string): Promise<string> {
-  const { clientEmail, privateKey } = parseServiceAccount(serviceAccountJson);
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: "RS256", typ: "JWT" };
-  const claim = {
-    iss: clientEmail,
-    scope: SHEETS_SCOPE,
-    aud: "https://oauth2.googleapis.com/token",
-    exp: now + 3600,
-    iat: now,
-  };
-  const encHeader = base64UrlEncode(new TextEncoder().encode(JSON.stringify(header)));
-  const encClaim = base64UrlEncode(new TextEncoder().encode(JSON.stringify(claim)));
-  const signingInput = `${encHeader}.${encClaim}`;
-
-  // private_key dari file JSON adalah PEM PKCS#8. Bersihkan header/footer.
-  const pemBody = privateKey
-    .replace(/-----BEGIN PRIVATE KEY-----/g, "")
-    .replace(/-----END PRIVATE KEY-----/g, "")
-    .replace(/\s+/g, "");
-  const der = base64UrlDecode(pemBody);
-
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    der as BufferSource,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(signingInput),
-  );
-  const jwt = `${signingInput}.${base64UrlEncode(new Uint8Array(signature))}`;
-
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+/** Tukar refresh token → access token (drive.file). */
+async function getAccessToken(refreshToken: string): Promise<string> {
+  const res = await fetch(OAUTH_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt,
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token",
     }),
   });
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Token exchange gagal (${res.status}): ${errText.slice(0, 300)}`);
+    throw new Error(`Token refresh gagal (${res.status}): ${errText.slice(0, 300)}`);
   }
   const data = await res.json();
   const token = data["access_token"] as string | undefined;
-  if (!token) throw new Error("Token exchange gagal — tidak ada access_token.");
+  if (!token) throw new Error("Token refresh gagal — tidak ada access_token.");
   return token;
+}
+
+/** Helper utama: ambil access token OAuth dari state tersimpan. */
+async function requireAccessToken(supabase: any): Promise<{ token: string; ownerEmail: string }> {
+  const { refreshToken, ownerEmail, enabled } = await getOauthState(supabase);
+  if (!enabled || !refreshToken) {
+    throw new Error("Spreadsheet belum terhubung Google — login Google dulu di dashboard.");
+  }
+  return { token: await getAccessToken(refreshToken), ownerEmail };
 }
 
 // ─── Google Sheets REST helpers (fetch langsung, tanpa SDK) ──────────────
@@ -221,7 +186,10 @@ async function sheetsWrite(
   await googleFetch(
     token,
     `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab + "!A1")}?valueInputOption=USER_ENTERED`,
-    { method: "PUT", body: JSON.stringify({ values }) },
+    {
+      method: "PUT",
+      body: JSON.stringify({ values }),
+    },
   );
   // Teruskan request format JSON apa adanya (template yang dikirim app).
   if (Array.isArray(requests) && requests.length > 0) {
@@ -240,52 +208,103 @@ function serviceClient() {
   );
 }
 
-async function getCredential(supabase: any): Promise<string> {
-  const { data, error } = await supabase
-    .from("sheets_settings")
-    .select("service_account_json, enabled")
-    .eq("id", 1)
-    .maybeSingle();
-  if (error) throw new Error(`Gagal baca sheets_settings: ${error.message}`);
-  if (!data || !data.enabled || !data.service_account_json) {
-    throw new Error("Fitur spreadsheet belum aktif — hubungi admin.");
-  }
-  return data.service_account_json as string;
-}
-
-async function upsertRegistry(
-  supabase: any,
-  user_id: string,
-  fields: Record<string, unknown>,
-): Promise<void> {
-  const { error } = await supabase.from("sheets_registry").upsert(
-    { user_id, ...fields, updated_at: new Date().toISOString() },
-    { onConflict: "user_id" },
-  );
-  if (error) throw new Error(`Gagal simpan sheets_registry: ${error.message}`);
-}
-
 // ─── Handlers ────────────────────────────────────────────────────────────
 
-async function handleSaveCredential(supabase: any, body: any): Promise<Response> {
-  const raw = typeof body.service_account_json === "string" ? body.service_account_json.trim() : "";
-  if (!raw) return json({ error: "service_account_json wajib diisi." }, 400);
-  parseServiceAccount(raw); // validasi
+async function handleOAuthStatus(supabase: any): Promise<Response> {
+  const { refreshToken, ownerEmail, enabled } = await getOauthState(supabase);
+  return json({
+    enabled: enabled && !!refreshToken,
+    owner_email: ownerEmail || null,
+    has_credential: !!refreshToken,
+  });
+}
+
+/** Bangun URL consent Google (paste-code flow, drive.file, offline). */
+function buildConsentUrl(): string {
+  const params = new URLSearchParams({
+    client_id: OAUTH_CLIENT_ID,
+    redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
+    response_type: "code",
+    scope: OAUTH_SCOPE,
+    access_type: "offline",
+    prompt: "consent",
+  });
+  return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+async function handleOAuthConsentUrl(): Promise<Response> {
+  if (!OAUTH_CLIENT_ID) {
+    return json({ error: "GOOGLE_OAUTH_CLIENT_ID belum di-set di Supabase." }, 500);
+  }
+  return json({ url: buildConsentUrl() });
+}
+
+async function handleOAuthCallback(supabase: any, body: any): Promise<Response> {
+  const code = typeof body.code === "string" ? body.code.trim() : "";
+  if (!code) return json({ error: "Kode OAuth wajib diisi." }, 400);
+  if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
+    return json({ error: "GOOGLE_OAUTH_CLIENT_ID / SECRET belum di-set di Supabase." }, 500);
+  }
+
+  // Tukar code → token (refresh_token + access_token + email).
+  const res = await fetch(OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: "urn:ietf:wg:oauth:2.0:oob",
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Tukar kode gagal (${res.status}): ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const refreshToken = data["refresh_token"] as string | undefined;
+  const accessToken = data["access_token"] as string | undefined;
+  if (!refreshToken) {
+    throw new Error(
+      "Tidak ada refresh_token. Pastikan consent screen meminta offline access (access_type=offline) dan user bukan test user yang sudah consent.",
+    );
+  }
+
+  // Ambil email owner dari access token (userinfo).
+  let ownerEmail = "";
+  try {
+    const ui = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (ui.ok) {
+      const u = await ui.json();
+      ownerEmail = u.email ?? "";
+    }
+  } catch {
+    ownerEmail = "";
+  }
+
   await supabase.from("sheets_settings").upsert(
     {
       id: 1,
-      service_account_json: raw,
+      oauth_refresh_token: refreshToken,
+      oauth_owner_email: ownerEmail,
       enabled: true,
       updated_at: new Date().toISOString(),
     },
     { onConflict: "id" },
   );
-  return json({ ok: true, message: "Kredensial service account tersimpan." });
+
+  return json({
+    ok: true,
+    message: `Google terhubung${ownerEmail ? ` sebagai ${ownerEmail}` : ""}.`,
+    owner_email: ownerEmail,
+  });
 }
 
 async function handleTestCredential(supabase: any): Promise<Response> {
-  const raw = await getCredential(supabase);
-  const token = await getAccessToken(raw);
+  const { token } = await requireAccessToken(supabase);
   const start = Date.now();
   const { url } = await sheetsCreate(token, "NUSA Test Koneksi", ["Test"]);
   const latency = Date.now() - start;
@@ -338,104 +357,90 @@ async function handleCreateSpreadsheet(supabase: any, body: any): Promise<Respon
     .select("spreadsheet_id, spreadsheet_url, status")
     .eq("user_id", user_id)
     .maybeSingle();
-  if (existing.data?.spreadsheet_id && existing.data?.spreadsheet_url) {
+  if (existing?.data?.spreadsheet_id && existing?.data?.spreadsheet_url) {
     return json({
       spreadsheet_id: existing.data.spreadsheet_id,
       spreadsheet_url: existing.data.spreadsheet_url,
+      created: false,
       status: existing.data.status,
-      created_now: false,
     });
   }
 
-  await upsertRegistry(supabase, user_id, {
-    email: email ?? null,
-    store_name: store_name ?? null,
-    variant: variant ?? null,
-    status: "pending",
-    error: null,
-  });
+  const { token } = await requireAccessToken(supabase);
+  const { spreadsheetId, url } = await sheetsCreate(
+    token,
+    store_name ? `Laporan NUSA — ${store_name}` : "Laporan NUSA",
+    ["Laporan", "Produk", "Transaksi", "Stok", "Keuangan", "Karyawan", "Pelanggan", "Supplier", "Promo", "Presensi"],
+  );
+  await sheetsShare(token, spreadsheetId, email || "");
 
-  const raw = await getCredential(supabase);
-  try {
-    const token = await getAccessToken(raw);
-    const storeName = store_name ? ` — ${store_name}` : "";
-    const { spreadsheetId, url } = await sheetsCreate(
-      token,
-      `Laporan NUSA${storeName}`,
-      ["Laporan", "Produk", "Transaksi", "Stok", "Keuangan", "Karyawan", "Pelanggan", "Supplier", "Promo", "Presensi"],
-    );
-    await sheetsShare(token, spreadsheetId, email);
-    await upsertRegistry(supabase, user_id, {
-      email: email ?? null,
-      store_name: store_name ?? null,
-      variant: variant ?? null,
+  await supabase.from("sheets_registry").upsert(
+    {
+      user_id,
+      email: email || "",
+      store_name: store_name || "",
+      variant: variant || "",
       spreadsheet_id: spreadsheetId,
       spreadsheet_url: url,
       status: "ready",
       error: null,
-    });
-    return json({
-      spreadsheet_id: spreadsheetId,
-      spreadsheet_url: url,
-      status: "ready",
-      created_now: true,
-    });
-  } catch (e: any) {
-    await upsertRegistry(supabase, user_id, {
-      status: "error",
-      error: e.message ?? String(e),
-    });
-    throw e;
-  }
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" },
+  );
+  return json({ spreadsheet_id: spreadsheetId, spreadsheet_url: url, created: true, status: "ready" });
 }
 
 async function handleWrite(supabase: any, body: any): Promise<Response> {
   const { user_id, spreadsheet_id, tab, values, requests } = body;
-  if (!user_id) return json({ error: "user_id wajib diisi." }, 400);
-  if (!spreadsheet_id) return json({ error: "spreadsheet_id wajib diisi." }, 400);
-  if (!tab || !Array.isArray(values)) {
-    return json({ error: "tab + values wajib diisi." }, 400);
+  if (!user_id || !spreadsheet_id || !tab) {
+    return json({ error: "user_id, spreadsheet_id, tab wajib diisi." }, 400);
   }
 
-  // Validasi kepemilikan: user hanya boleh menulis ke spreadsheet miliknya.
-  const reg = await supabase
+  // Validasi kepemilikan: registry[user_id].spreadsheet_id == spreadsheet_id
+  // (anti tulis spreadsheet orang lain).
+  const { data } = await supabase
     .from("sheets_registry")
-    .select("spreadsheet_id")
+    .select("spreadsheet_id, status, error")
     .eq("user_id", user_id)
     .maybeSingle();
-  if (!reg.data || reg.data.spreadsheet_id !== spreadsheet_id) {
+  if (!data || data.spreadsheet_id !== spreadsheet_id) {
     return json({ error: "Spreadsheet bukan milik user ini." }, 403);
   }
 
-  const raw = await getCredential(supabase);
-  const token = await getAccessToken(raw);
-  await sheetsWrite(token, spreadsheet_id, tab, values, requests ?? []);
-  await upsertRegistry(supabase, user_id, {
+  const { token } = await requireAccessToken(supabase);
+  await sheetsWrite(token, spreadsheet_id, tab, Array.isArray(values) ? values : [], Array.isArray(requests) ? requests : []);
+  await supabase.from("sheets_registry").update({
     status: "ready",
     error: null,
     updated_at: new Date().toISOString(),
-  });
+  }).eq("user_id", user_id);
+
   return json({ ok: true });
 }
 
-// ─── Dispatch ────────────────────────────────────────────────────────────
+// ─── Router ──────────────────────────────────────────────────────────────
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
-  const supabase = serviceClient();
   try {
-    const isAdmin = req.headers.get("x-admin-key") === ADMIN_KEY;
+    const supabase = serviceClient();
 
     // GET → baca status kredensial (dipakai dashboard, aman anonim: tidak
-    // pernah mengekspos service_account_json — cuma enabled).
+    // pernah mengekspos refresh token — cuma enabled + owner email).
     if (req.method === "GET") {
       const { data } = await supabase
         .from("sheets_settings")
-        .select("enabled")
+        .select("enabled, oauth_owner_email")
         .eq("id", 1)
         .maybeSingle();
-      return json({ enabled: data?.enabled === true });
+      return json({
+        enabled: data?.enabled === true && !!data?.oauth_owner_email,
+        owner_email: data?.oauth_owner_email ?? null,
+      });
     }
 
     const body = await req.json();
@@ -444,13 +449,19 @@ Deno.serve(async (req) => {
 
     switch (action) {
       // ── Admin ──
-      case "save_credential":
+      case "oauth_status":
+      case "oauth_callback":
+      case "oauth_consent_url":
       case "test_credential":
       case "list_users":
-        if (!isAdmin) return json({ error: "Unauthorized" }, 401);
+        if (!isAdmin(req)) return json({ error: "Unauthorized" }, 401);
         result =
-          action === "save_credential"
-            ? await handleSaveCredential(supabase, body)
+          action === "oauth_status"
+            ? await handleOAuthStatus(supabase)
+            : action === "oauth_callback"
+            ? await handleOAuthCallback(supabase, body)
+            : action === "oauth_consent_url"
+            ? await handleOAuthConsentUrl()
             : action === "test_credential"
             ? await handleTestCredential(supabase)
             : await handleListUsers(supabase);
@@ -477,3 +488,8 @@ Deno.serve(async (req) => {
     return json({ error: e?.message ?? String(e) }, 500);
   }
 });
+
+// isAdmin: cek x-admin-key (mirip license-manager / ai-assistant).
+function isAdmin(req: Request): boolean {
+  return req.headers.get("x-admin-key") === ADMIN_KEY;
+}

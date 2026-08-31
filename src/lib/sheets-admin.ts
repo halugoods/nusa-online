@@ -1,20 +1,16 @@
 "use client";
 
 // ─── Sheets admin manager — dashboard nusa-online (Spreadsheet tab) ──────
-// Edge function `sheets-admin`:
-//   GET  /                        → status kredensial (enabled?) — aman anonim
-//   POST {action:"save_credential"}  → simpan service account JSON (admin)
-//   POST {action:"test_credential"}  → test koneksi Google (admin)
-//   POST {action:"list_users"}       → registry semua user + link (admin)
+// Edge function `sheets-admin` (OAuth Company Account):
+//   GET  /                        → status koneksi (enabled? owner email?) — aman anonim
+//   POST {action:"oauth_status"}    → info akun Google terhubung (admin)
+//   POST {action:"oauth_callback",code} → tukar OAuth code → refresh token (admin)
+//   POST {action:"test_credential"} → test koneksi Google (admin)
+//   POST {action:"list_users"}      → registry semua user + link (admin)
 //
-// Kredensial: service account JSON milik NUSA (client_email + private_key).
-// Panduan buat:
-//   1. https://console.cloud.google.com → pilih/create project
-//   2. Aktifkan "Google Sheets API" (APIs & Services → Library)
-//   3. Aktifkan "Google Drive API" (untuk share ke email user)
-//   4. IAM & Admin → Service Accounts → Create service account
-//   5. Klik akun → Keys → Add Key → Create new key → JSON (download)
-//   6. Paste isi file JSON di bawah lalu Simpan.
+// Alur: admin login Google sekali (paste code) → refresh token disimpan di
+// sheets_settings → server buat & isi spreadsheet atas nama company account.
+// App user tidak perlu login Google.
 
 const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/sheets-admin`;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -33,7 +29,16 @@ export interface SheetsRegistryUser {
   updated_at: string;
 }
 
-export async function fetchSheetsStatus(): Promise<{ enabled: boolean }> {
+export interface SheetsOAuthStatus {
+  enabled: boolean;
+  owner_email: string | null;
+  has_credential: boolean;
+}
+
+export async function fetchSheetsStatus(): Promise<{
+  enabled: boolean;
+  owner_email: string | null;
+}> {
   try {
     const res = await fetch(EDGE_FUNCTION_URL, {
       headers: {
@@ -41,28 +46,26 @@ export async function fetchSheetsStatus(): Promise<{ enabled: boolean }> {
         "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       },
     });
-    if (!res.ok) return { enabled: false };
-    return (await res.json()) as { enabled: boolean };
+    if (!res.ok) return { enabled: false, owner_email: null };
+    const data = (await res.json()) as { enabled?: boolean; owner_email?: string | null };
+    return { enabled: data.enabled === true, owner_email: data.owner_email ?? null };
   } catch {
-    return { enabled: false };
+    return { enabled: false, owner_email: null };
   }
 }
 
-function adminKey(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("nusa_admin_key");
-}
-
 async function postAction(action: string, payload: Record<string, unknown> = {}) {
-  const key = adminKey();
-  if (!key) throw new Error("Not authenticated");
+  const adminKey = typeof window !== "undefined"
+    ? localStorage.getItem("nusa_admin_key")
+    : null;
+  if (!adminKey) throw new Error("Not authenticated");
   const res = await fetch(EDGE_FUNCTION_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "apikey": SUPABASE_ANON_KEY,
       "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      "x-admin-key": key,
+      "x-admin-key": adminKey,
     },
     body: JSON.stringify({ action, ...payload }),
   });
@@ -71,8 +74,25 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
   return data;
 }
 
-export async function saveSheetsCredential(serviceAccountJson: string): Promise<void> {
-  await postAction("save_credential", { service_account_json: serviceAccountJson });
+export async function fetchOAuthStatus(): Promise<SheetsOAuthStatus> {
+  const data = await postAction("oauth_status");
+  return {
+    enabled: data.enabled === true,
+    owner_email: data.owner_email ?? null,
+    has_credential: data.has_credential === true,
+  };
+}
+
+/** Ambil URL consent Google (paste-code flow). Admin klik → login Google → dapat code. */
+export async function fetchOAuthConsentUrl(): Promise<string> {
+  const data = await postAction("oauth_consent_url");
+  if (!data.url) throw new Error(data.error ?? "Gagal ambil URL login Google");
+  return data.url as string;
+}
+
+export async function submitOAuthCode(code: string): Promise<{ ok: boolean; owner_email: string }> {
+  const data = await postAction("oauth_callback", { code });
+  return { ok: data.ok === true, owner_email: data.owner_email ?? "" };
 }
 
 export interface SheetsTestResult {
