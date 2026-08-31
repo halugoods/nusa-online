@@ -17,7 +17,8 @@ const TABS = [
   { id: "generate",  label: "Generate",  href: "/dashboard?tab=generate" },
   { id: "tutorials", label: "Tutorial",  href: "/dashboard?tab=tutorials" },
   { id: "ai",        label: "AI",        href: "/dashboard?tab=ai" },
-  { id: "sheets",    label: "Cloud Google", href: "/dashboard?tab=sheets" },
+  { id: "sheets",    label: "Google Sheets", href: "/dashboard?tab=sheets" },
+  { id: "arsip",     label: "Arsip Bulanan", href: "/dashboard?tab=arsip" },
   { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
   { id: "audio",     label: "Audio",     href: "/dashboard/audio" },
 ];

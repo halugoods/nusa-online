@@ -46,10 +46,11 @@ import DashboardShell from "./_components/DashboardShell";
 import NotifikasiTab from "./_components/NotifikasiTab";
 import AiTab from "./_components/AiTab";
 import SpreadsheetsTab from "./_components/SpreadsheetsTab";
+import ArsipTab from "./_components/ArsipTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds";
+type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "arsip" | "sounds";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ function DashboardInner() {
   const view: View =
     tabParam === "licenses" || tabParam === "generate" ||
     tabParam === "tutorials" || tabParam === "sounds" ||
-    tabParam === "ai" || tabParam === "sheets"
+    tabParam === "ai" || tabParam === "sheets" || tabParam === "arsip"
       ? tabParam
       : "overview";
 
@@ -197,6 +198,7 @@ function DashboardInner() {
       {view === "tutorials" && <TutorialsTab />}
       {view === "ai" && <AiTab />}
       {view === "sheets" && <SpreadsheetsTab />}
+      {view === "arsip" && <ArsipTab />}
       {view === "sounds" && <NotifikasiTab />}
     </DashboardShell>
   );

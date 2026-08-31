@@ -11,13 +11,10 @@ import {
   listSheetsUsers,
   listSheetsAccounts,
   revokeSheetsAccount,
-  listSheetsArchives,
-  archiveSheetsMonth,
   type SheetsRegistryUser,
   type SheetsTestResult,
   type SheetsOAuthStatus,
   type SheetsAccountsPayload,
-  type SheetsArchiveRow,
 } from "@/lib/sheets-admin";
 import { PRODUCTS } from "@/lib/license-manager";
 
@@ -66,15 +63,11 @@ export default function SpreadsheetsTab() {
   const [users, setUsers] = useState<SheetsRegistryUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
 
-  // Multi-akun Google (Cloud Google) + arsip bulanan.
+  // Multi-akun Google (cloud panas).
   const [accounts, setAccounts] = useState<SheetsAccountsPayload | null>(null);
   const [addingAccount, setAddingAccount] = useState(false);
   const [accountCode, setAccountCode] = useState("");
   const [accountLabel, setAccountLabel] = useState("");
-  const [archives, setArchives] = useState<SheetsArchiveRow[]>([]);
-  const [archiveUser, setArchiveUser] = useState("");
-  const [archiveMonth, setArchiveMonth] = useState("");
-  const [archiving, setArchiving] = useState(false);
 
   const reloadStatus = useCallback(async () => {
     try {
@@ -100,19 +93,6 @@ export default function SpreadsheetsTab() {
 
   useEffect(() => {
     reloadAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const reloadArchives = useCallback(async () => {
-    try {
-      setArchives(await listSheetsArchives());
-    } catch {
-      setArchives([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    reloadArchives();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -210,30 +190,6 @@ export default function SpreadsheetsTab() {
     } catch (e: any) {
       setBusy(e.message);
     }
-  }
-
-  async function handleArchiveMonth() {
-    const uid = archiveUser.trim();
-    const bulan = archiveMonth.trim();
-    if (!uid || !/^\d{4}-\d{2}$/.test(bulan)) {
-      setBusy("Isi user_id dan bulan format YYYY-MM (contoh: 2026-08).");
-      return;
-    }
-    if (!confirm(
-      `Arsip bulan ${bulan} untuk user ini?\n\n` +
-      "Semua tab spreadsheet user di-BACKUP ke Supabase lalu DIHAPUS dari sheet " +
-      "(bulan berikutnya mulai kosong). Arsip idempotent — jalan 2× tidak dobel."
-    )) return;
-    setArchiving(true);
-    setBusy("");
-    try {
-      const r = await archiveSheetsMonth(uid, bulan);
-      setBusy(`✅ ${r.message}`);
-      await reloadArchives();
-    } catch (e: any) {
-      setBusy(`❌ ${e.message}`);
-    }
-    setArchiving(false);
   }
 
   const connected = status?.enabled === true;
@@ -548,68 +504,6 @@ export default function SpreadsheetsTab() {
                 {addingAccount ? "Menghubungkan…" : "Hubungkan Akun"}
               </button>
             </details>
-          </div>
-        )}
-      </div>
-
-      {/* ── Arsip bulanan (cold storage Supabase) ── */}
-      <div className="bg-white rounded-2xl border border-input-border p-5 space-y-4">
-        <div>
-          <p className="font-semibold text-gray-900 text-sm">Arsip Bulanan (Cloud Dingin)</p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            Backup data bulan selesai ke Supabase lalu kosongkan spreadsheet — cloud panas tetap
-            ramping, laporan bulan lama tetap bisa dibuka dari arsip. Idempotent: arsip ulang bulan
-            yang sama TIDAK menduplikasi.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <input
-            value={archiveUser}
-            onChange={(e) => setArchiveUser(e.target.value)}
-            placeholder="user_id (dari registry bawah)"
-            className="flex-1 min-w-[220px] px-3 py-2 border border-input-border rounded-xl text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-          />
-          <input
-            value={archiveMonth}
-            onChange={(e) => setArchiveMonth(e.target.value)}
-            placeholder="YYYY-MM"
-            className="w-28 px-3 py-2 border border-input-border rounded-xl text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-          />
-          <button
-            onClick={handleArchiveMonth}
-            disabled={archiving}
-            className="px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs"
-          >
-            {archiving ? "Mengarsipkan…" : "Arsipkan Bulan"}
-          </button>
-        </div>
-
-        {archives.length > 0 && (
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-gray-50 text-left text-gray-500">
-                  <th className="px-3 py-2 font-medium">Bulan</th>
-                  <th className="px-3 py-2 font-medium">User</th>
-                  <th className="px-3 py-2 font-medium">Tab</th>
-                  <th className="px-3 py-2 font-medium text-right">Baris</th>
-                  <th className="px-3 py-2 font-medium">Diarsipkan</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {archives.slice(0, 30).map((a, i) => (
-                  <tr key={`${a.user_id}-${a.bulan}-${a.tab}-${i}`}>
-                    <td className="px-3 py-1.5 font-mono text-gray-700">{a.bulan}</td>
-                    <td className="px-3 py-1.5 text-gray-500 font-mono truncate max-w-[140px]" title={a.user_id}>
-                      {a.user_id}
-                    </td>
-                    <td className="px-3 py-1.5 text-gray-600">{a.tab}</td>
-                    <td className="px-3 py-1.5 text-right text-gray-700">{a.row_count}</td>
-                    <td className="px-3 py-1.5 text-gray-400">{formatDate(a.archived_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
