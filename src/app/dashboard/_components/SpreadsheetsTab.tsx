@@ -6,11 +6,18 @@ import {
   fetchOAuthStatus,
   fetchOAuthConsentUrl,
   submitOAuthCode,
+  submitOAuthCodeAccount,
   testSheetsCredential,
   listSheetsUsers,
+  listSheetsAccounts,
+  revokeSheetsAccount,
+  listSheetsArchives,
+  archiveSheetsMonth,
   type SheetsRegistryUser,
   type SheetsTestResult,
   type SheetsOAuthStatus,
+  type SheetsAccountsPayload,
+  type SheetsArchiveRow,
 } from "@/lib/sheets-admin";
 import { PRODUCTS } from "@/lib/license-manager";
 
@@ -59,6 +66,16 @@ export default function SpreadsheetsTab() {
   const [users, setUsers] = useState<SheetsRegistryUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
 
+  // Multi-akun Google (Cloud Google) + arsip bulanan.
+  const [accounts, setAccounts] = useState<SheetsAccountsPayload | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
+  const [accountCode, setAccountCode] = useState("");
+  const [accountLabel, setAccountLabel] = useState("");
+  const [archives, setArchives] = useState<SheetsArchiveRow[]>([]);
+  const [archiveUser, setArchiveUser] = useState("");
+  const [archiveMonth, setArchiveMonth] = useState("");
+  const [archiving, setArchiving] = useState(false);
+
   const reloadStatus = useCallback(async () => {
     try {
       setStatus(await fetchOAuthStatus());
@@ -69,6 +86,33 @@ export default function SpreadsheetsTab() {
 
   useEffect(() => {
     reloadStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const reloadAccounts = useCallback(async () => {
+    try {
+      setAccounts(await listSheetsAccounts());
+    } catch (e: any) {
+      // Migration 0022 belum dijalankan → tabel sheets_accounts belum ada.
+      setAccounts(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadAccounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const reloadArchives = useCallback(async () => {
+    try {
+      setArchives(await listSheetsArchives());
+    } catch {
+      setArchives([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    reloadArchives();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -134,6 +178,62 @@ export default function SpreadsheetsTab() {
       setTestResult({ ok: false, message: e.message });
     }
     setTesting(false);
+  }
+
+  async function handleAddAccount() {
+    const code = accountCode.trim();
+    if (!code) {
+      setBusy("Tempel dulu kode dari halaman Google (login dengan akun Google KEDUA).");
+      return;
+    }
+    setAddingAccount(true);
+    setBusy("");
+    try {
+      const r = await submitOAuthCodeAccount(code, accountLabel.trim() || undefined);
+      setAccountCode("");
+      setAccountLabel("");
+      setBusy(`✅ ${r.email ? `${r.email} terhubung.` : "Akun tambahan terhubung."}`);
+      await reloadAccounts();
+    } catch (e: any) {
+      setBusy(e.message);
+    }
+    setAddingAccount(false);
+  }
+
+  async function handleRevokeAccount(id: string, email: string) {
+    if (!confirm(`Nonaktifkan akun ${email}? User baru tidak akan diarahkan ke akun ini lagi.`)) return;
+    setBusy("");
+    try {
+      await revokeSheetsAccount(id);
+      setBusy(`✅ Akun ${email} dinonaktifkan.`);
+      await reloadAccounts();
+    } catch (e: any) {
+      setBusy(e.message);
+    }
+  }
+
+  async function handleArchiveMonth() {
+    const uid = archiveUser.trim();
+    const bulan = archiveMonth.trim();
+    if (!uid || !/^\d{4}-\d{2}$/.test(bulan)) {
+      setBusy("Isi user_id dan bulan format YYYY-MM (contoh: 2026-08).");
+      return;
+    }
+    if (!confirm(
+      `Arsip bulan ${bulan} untuk user ini?\n\n` +
+      "Semua tab spreadsheet user di-BACKUP ke Supabase lalu DIHAPUS dari sheet " +
+      "(bulan berikutnya mulai kosong). Arsip idempotent — jalan 2× tidak dobel."
+    )) return;
+    setArchiving(true);
+    setBusy("");
+    try {
+      const r = await archiveSheetsMonth(uid, bulan);
+      setBusy(`✅ ${r.message}`);
+      await reloadArchives();
+    } catch (e: any) {
+      setBusy(`❌ ${e.message}`);
+    }
+    setArchiving(false);
   }
 
   const connected = status?.enabled === true;
@@ -292,6 +392,226 @@ export default function SpreadsheetsTab() {
             email Google user yang login di app — jadi muncul di Drive mereka.
           </p>
         </details>
+      </div>
+
+      {/* ── Daftar akun Google (multi-akun, 50 user/akun) ── */}
+      <div className="bg-white rounded-2xl border border-input-border p-5 space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">Akun Google (Kapasitas User)</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              1 akun Google menampung maks ±50 user (kuota Drive 15GB + limit API).
+              Penuh? Tambah akun Google baru: login dengan akun itu → paste kode di sini.
+              Spreadsheet user baru otomatis masuk ke akun paling longgar.
+            </p>
+          </div>
+          <button
+            onClick={reloadAccounts}
+            className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-primary bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            ↻ Refresh
+          </button>
+        </div>
+
+        {accounts === null ? (
+          <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+            Tabel multi-akun belum tersedia — jalankan migration{" "}
+            <span className="font-mono">0022_sheets_multiaccount.sql</span> di Supabase SQL Editor dulu.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {/* Akun utama (sheets_settings) */}
+            <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gray-50 border border-gray-100">
+              <div className="min-w-0">
+                <p className="text-sm text-gray-800 font-medium truncate">
+                  {accounts.main_account.email ?? "Belum terhubung"}
+                  <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">utama</span>
+                </p>
+                <p className="text-xs text-gray-400">
+                  {accounts.main_account.users}/{accounts.main_account.max_users} user
+                  {accounts.main_account.enabled ? "" : " · nonaktif"}
+                </p>
+              </div>
+              <span
+                className={`shrink-0 inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  accounts.main_account.enabled
+                    ? "bg-green-50 text-green-700 border-green-200"
+                    : "bg-amber-50 text-amber-700 border-amber-200"
+                }`}
+              >
+                {accounts.main_account.enabled ? "Aktif" : "Belum"}
+              </span>
+            </div>
+
+            {/* Akun tambahan */}
+            {(accounts.accounts ?? []).map((a) => {
+              const full = a.users >= a.max_users;
+              return (
+                <div
+                  key={a.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gray-50 border border-gray-100"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm text-gray-800 font-medium truncate">
+                      {a.email}
+                      {a.label && (
+                        <span className="ml-2 text-[10px] text-gray-400">({a.label})</span>
+                      )}
+                    </p>
+                    <p className={`text-xs ${full ? "text-red-500 font-medium" : "text-gray-400"}`}>
+                      {a.users}/{a.max_users} user{full ? " · PENUH" : ""}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${
+                        !a.enabled
+                          ? "bg-gray-50 text-gray-500 border-gray-200"
+                          : full
+                          ? "bg-red-50 text-red-600 border-red-200"
+                          : "bg-green-50 text-green-700 border-green-200"
+                      }`}
+                    >
+                      {!a.enabled ? "Nonaktif" : full ? "Penuh" : "Aktif"}
+                    </span>
+                    {a.enabled && (
+                      <button
+                        onClick={() => handleRevokeAccount(a.id, a.email)}
+                        className="px-2 py-1 text-xs text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {accounts.accounts.length === 0 && (
+              <p className="text-xs text-gray-400">
+                Belum ada akun tambahan — semua user masih memakai akun utama.
+              </p>
+            )}
+
+            {/* Tambah akun baru (paste-code, sama seperti akun utama) */}
+            <details className="text-xs text-gray-500">
+              <summary className="cursor-pointer font-medium text-gray-600 hover:text-primary">
+                + Tambah Akun Google Baru
+              </summary>
+              <ol className="list-decimal ml-5 mt-2 space-y-1">
+                <li>
+                  Klik{" "}
+                  <a
+                    href={consentUrl || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={async (e) => {
+                      if (!consentUrl) {
+                        e.preventDefault();
+                        try {
+                          const url = await fetchOAuthConsentUrl();
+                          setConsentUrl(url);
+                          window.open(url, "_blank", "noopener,noreferrer");
+                        } catch (err: any) {
+                          setBusy(err.message);
+                        }
+                      }
+                    }}
+                    className="text-primary underline"
+                  >
+                    Login Google (akun KEDUA)
+                  </a>{" "}
+                  — PENTING: pilih akun Google yang BERBEDA dari akun utama.
+                </li>
+                <li>
+                  Browser ke <span className="font-mono">127.0.0.1</span> (gagal koneksi = normal) →
+                  salin kode dari address bar → tempel di bawah.
+                </li>
+              </ol>
+              <input
+                value={accountLabel}
+                onChange={(e) => setAccountLabel(e.target.value)}
+                placeholder="Label (opsional, mis. akun-cabang-2)"
+                className="mt-2 w-full px-3 py-2 border border-input-border rounded-xl text-xs focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              />
+              <input
+                value={accountCode}
+                onChange={(e) => setAccountCode(e.target.value)}
+                placeholder="Tempel kode dari Google di sini…"
+                className="mt-2 w-full px-3 py-2 border border-input-border rounded-xl text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              />
+              <button
+                onClick={handleAddAccount}
+                disabled={addingAccount}
+                className="mt-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs"
+              >
+                {addingAccount ? "Menghubungkan…" : "Hubungkan Akun"}
+              </button>
+            </details>
+          </div>
+        )}
+      </div>
+
+      {/* ── Arsip bulanan (cold storage Supabase) ── */}
+      <div className="bg-white rounded-2xl border border-input-border p-5 space-y-4">
+        <div>
+          <p className="font-semibold text-gray-900 text-sm">Arsip Bulanan (Cloud Dingin)</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Backup data bulan selesai ke Supabase lalu kosongkan spreadsheet — cloud panas tetap
+            ramping, laporan bulan lama tetap bisa dibuka dari arsip. Idempotent: arsip ulang bulan
+            yang sama TIDAK menduplikasi.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 items-center">
+          <input
+            value={archiveUser}
+            onChange={(e) => setArchiveUser(e.target.value)}
+            placeholder="user_id (dari registry bawah)"
+            className="flex-1 min-w-[220px] px-3 py-2 border border-input-border rounded-xl text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+          />
+          <input
+            value={archiveMonth}
+            onChange={(e) => setArchiveMonth(e.target.value)}
+            placeholder="YYYY-MM"
+            className="w-28 px-3 py-2 border border-input-border rounded-xl text-xs font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+          />
+          <button
+            onClick={handleArchiveMonth}
+            disabled={archiving}
+            className="px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-xs"
+          >
+            {archiving ? "Mengarsipkan…" : "Arsipkan Bulan"}
+          </button>
+        </div>
+
+        {archives.length > 0 && (
+          <div className="rounded-xl border border-gray-100 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 text-left text-gray-500">
+                  <th className="px-3 py-2 font-medium">Bulan</th>
+                  <th className="px-3 py-2 font-medium">User</th>
+                  <th className="px-3 py-2 font-medium">Tab</th>
+                  <th className="px-3 py-2 font-medium text-right">Baris</th>
+                  <th className="px-3 py-2 font-medium">Diarsipkan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {archives.slice(0, 30).map((a, i) => (
+                  <tr key={`${a.user_id}-${a.bulan}-${a.tab}-${i}`}>
+                    <td className="px-3 py-1.5 font-mono text-gray-700">{a.bulan}</td>
+                    <td className="px-3 py-1.5 text-gray-500 font-mono truncate max-w-[140px]" title={a.user_id}>
+                      {a.user_id}
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-600">{a.tab}</td>
+                    <td className="px-3 py-1.5 text-right text-gray-700">{a.row_count}</td>
+                    <td className="px-3 py-1.5 text-gray-400">{formatDate(a.archived_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ── Registry user ── */}

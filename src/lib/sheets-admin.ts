@@ -116,3 +116,67 @@ export async function listSheetsUsers(): Promise<SheetsRegistryUser[]> {
   const data = await postAction("list_users");
   return (data.users as SheetsRegistryUser[]) ?? [];
 }
+
+// ─── Multi-akun Google (Blok 1 MASTER LIST) ──────────────────────────────
+
+export interface SheetsAccount {
+  id: string;
+  email: string;
+  enabled: boolean;
+  max_users: number;
+  label: string | null;
+  users: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SheetsAccountsPayload {
+  main_account: {
+    email: string | null;
+    enabled: boolean;
+    users: number;
+    max_users: number;
+  };
+  accounts: SheetsAccount[];
+}
+
+export async function listSheetsAccounts(): Promise<SheetsAccountsPayload> {
+  return (await postAction("list_accounts")) as SheetsAccountsPayload;
+}
+
+/** OAuth code → akun Google TAMBAHAN (refresh token tersendiri di sheets_accounts). */
+export async function submitOAuthCodeAccount(
+  code: string,
+  label?: string,
+): Promise<{ ok: boolean; email: string }> {
+  const data = await postAction("oauth_callback_account", { code, label });
+  return { ok: data.ok === true, email: data.email ?? "" };
+}
+
+export async function revokeSheetsAccount(accountId: string): Promise<{ ok: boolean }> {
+  const data = await postAction("revoke_account", { account_id: accountId });
+  return { ok: data.ok === true };
+}
+
+// ─── Arsip bulanan (cold storage) ────────────────────────────────────────
+
+export interface SheetsArchiveRow {
+  user_id: string;
+  bulan: string;
+  tab: string;
+  row_count: number;
+  archived_at: string;
+}
+
+export async function listSheetsArchives(userId?: string): Promise<SheetsArchiveRow[]> {
+  const data = await postAction("list_archives", userId ? { user_id: userId } : {});
+  return (data.archives as SheetsArchiveRow[]) ?? [];
+}
+
+export async function archiveSheetsMonth(
+  userId: string,
+  bulan: string,
+): Promise<{ ok: boolean; message: string; tabs: Record<string, number> }> {
+  const data = await postAction("archive_month", { user_id: userId, bulan });
+  return { ok: data.ok === true, message: data.message ?? "", tabs: data.tabs ?? {} };
+}

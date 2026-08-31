@@ -17,17 +17,26 @@
 //
 // ACTIONS:
 //   Admin (header `x-admin-key`):
-//     oauth_status      {}                      → info akun Google terhubung (email) + enabled
-//     oauth_consent_url {}                      → URL consent Google (paste-code flow) untuk dashboard
-//     oauth_callback    {code}                  → tukar OAuth code → refresh token → simpan
-//     test_credential   {}                      → buat spreadsheet uji, buktikan token jalan
-//     list_users        {}                      → seluruh sheets_registry + link + status
+//     oauth_status            {}                → info akun Google terhubung (email) + enabled
+//     oauth_consent_url       {}                → URL consent Google (paste-code flow) untuk dashboard
+//     oauth_callback          {code}            → tukar OAuth code → refresh token → simpan (AKUN UTAMA)
+//     oauth_callback_account  {code, label?}    → tukar OAuth code → akun TAMBAHAN (tabel sheets_accounts)
+//     test_credential         {}                → buat spreadsheet uji, buktikan token jalan
+//     list_users              {}                → seluruh sheets_registry + link + status
+//     list_accounts           {}                → daftar akun Google + jumlah user per akun
+//     revoke_account          {account_id}      → nonaktifkan akun tambahan (tidak menerima user baru)
+//     archive_month           {user_id, bulan}  → arsip semua tab spreadsheet user ke sheets_archive
+//                                               (idempotent: upsert unik per user+bulan+tab, lalu kosongkan
+//                                               tab di sheet supaya cloud panas tetap ramping)
+//     list_archives           {user_id?}        → daftar arsip bulanan (dashboard + app)
 //   User app (anon, identitas di body):
-//     get_link          {user_id}               → spreadsheet_url yang sudah ada (404 kalau belum)
-//     create_spreadsheet {user_id, email, store_name, variant}
-//                                                → buat spreadsheet baru + share ke email user
-//     write             {user_id, spreadsheet_id, tab, values[], requests[]}
-//                                                → tulis data + format (validasi kepemilikan)
+//     get_link                {user_id}               → spreadsheet_url yang sudah ada (404 kalau belum)
+//     create_spreadsheet      {user_id, email, store_name, variant}
+//                                                     → buat spreadsheet baru + share ke email user
+//                                                       (auto-select akun Google paling longgar)
+//     write                   {user_id, spreadsheet_id, tab, values[], requests[]}
+//                                                     → tulis data + format (validasi kepemilikan)
+//     get_archives            {user_id, bulan?}       → data bulan lama dari arsip Supabase (cold tier)
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -112,6 +121,58 @@ async function requireAccessToken(supabase: any): Promise<{ token: string; owner
   return { token: await getAccessToken(refreshToken), ownerEmail };
 }
 
+// ─── Multi-akun Google (sheets_accounts) ─────────────────────────────────
+// 1 akun Google company cover ±50 user (kuota Drive 15GB + ±60 req/min).
+// Pas penuh → admin tambah akun baru di dashboard; edge fn auto-select akun
+// paling longgar saat create spreadsheet. sheets_settings (id=1) tetap jadi
+// akun utama / fallback.
+
+const SHEETS_TABS = [
+  "Laporan", "Produk", "Transaksi", "Stok", "Keuangan",
+  "Karyawan", "Pelanggan", "Supplier", "Promo", "Presensi",
+];
+
+/** Token + email akun tertentu dari sheets_accounts (atau akun utama bila null). */
+async function tokenForAccount(
+  supabase: any,
+  accountId: string | null,
+): Promise<{ token: string; ownerEmail: string }> {
+  if (!accountId) return requireAccessToken(supabase);
+  const { data, error } = await supabase
+    .from("sheets_accounts")
+    .select("id, email, oauth_refresh_token, enabled")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (error || !data || !data.enabled || !data.oauth_refresh_token) {
+    // Akun hilang/nonaktif (mis. di-revoke) → fallback ke akun utama.
+    console.warn(`[sheets-admin] akun ${accountId} tidak tersedia — fallback akun utama`);
+    return requireAccessToken(supabase);
+  }
+  return { token: await getAccessToken(data.oauth_refresh_token), ownerEmail: data.email };
+}
+
+/** Auto-select: akun tambahan enabled dengan user paling SEDIKIT (paling longgar). */
+async function pickLeastLoadedAccount(supabase: any): Promise<string | null> {
+  const { data: accounts, error } = await supabase
+    .from("sheets_accounts")
+    .select("id, max_users")
+    .eq("enabled", true);
+  if (error || !accounts || accounts.length === 0) return null;
+  const { data: regs } = await supabase
+    .from("sheets_registry")
+    .select("account_id");
+  const filled = new Map<string, number>();
+  (regs ?? []).forEach((r: any) => {
+    if (r?.account_id) filled.set(r.account_id, (filled.get(r.account_id) ?? 0) + 1);
+  });
+  let best: string | null = null;
+  let bestRoom = -1;
+  for (const a of accounts) {
+    const room = (a.max_users ?? 50) - (filled.get(a.id) ?? 0);
+    if (room > bestRoom) { bestRoom = room; best = a.id; }
+  }
+  return bestRoom > 0 ? best : null;
+}
 // ─── Google Sheets REST helpers (fetch langsung, tanpa SDK) ──────────────
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
@@ -405,6 +466,224 @@ async function handleListUsers(supabase: any): Promise<Response> {
   return json({ users: data });
 }
 
+// ─── Multi-akun: daftar / tambah / revoke (admin) ────────────────────────
+
+async function handleListAccounts(supabase: any): Promise<Response> {
+  const { data: accounts, error } = await supabase
+    .from("sheets_accounts")
+    .select("id, email, enabled, max_users, label, created_at, updated_at")
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`Gagal baca sheets_accounts: ${error.message}`);
+  const { data: regs } = await supabase
+    .from("sheets_registry")
+    .select("account_id");
+  const filled = new Map<string, number>();
+  (regs ?? []).forEach((r: any) => {
+    if (r?.account_id) filled.set(r.account_id, (filled.get(r.account_id) ?? 0) + 1);
+  });
+  // Akun utama (sheets_settings) juga ditampilkan bila sudah terhubung.
+  const main = await getOauthState(supabase);
+  return json({
+    main_account: {
+      email: main.ownerEmail || null,
+      enabled: main.enabled && !!main.refreshToken,
+      users: (regs ?? []).filter((r: any) => !r?.account_id).length,
+      max_users: 50,
+    },
+    accounts: (accounts ?? []).map((a: any) => ({
+      ...a,
+      users: filled.get(a.id) ?? 0,
+    })),
+  });
+}
+
+/** OAuth code → akun TAMBAHAN baru (sheets_accounts), bukan akun utama. */
+async function handleOAuthCallbackAccount(supabase: any, body: any): Promise<Response> {
+  let code = typeof body.code === "string" ? body.code.trim() : "";
+  if (!code) return json({ error: "Kode OAuth wajib diisi." }, 400);
+  try { code = decodeURIComponent(code); } catch { /* biarkan apa adanya */ }
+  if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
+    return json({ error: "GOOGLE_OAUTH_CLIENT_ID / SECRET belum di-set di Supabase." }, 500);
+  }
+  const res = await fetch(OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: OAUTH_CLIENT_ID,
+      client_secret: OAUTH_CLIENT_SECRET,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: OAUTH_REDIRECT_URI,
+    }),
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Tukar kode gagal (${res.status}): ${errText.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const refreshToken = data["refresh_token"] as string | undefined;
+  const accessToken = data["access_token"] as string | undefined;
+  if (!refreshToken) {
+    throw new Error("Tidak ada refresh_token (access_type=offline wajib; coba akun Google lain).");
+  }
+  let email = "";
+  try {
+    const ui = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (ui.ok) email = (await ui.json()).email ?? "";
+  } catch { email = ""; }
+  if (!email) return json({ error: "Gagal baca email akun Google dari token." }, 400);
+
+  // Relink akun sama = update (unique di expression index lower(email), jadi
+  // upsert PostgREST tidak bisa dipakai — lakukan manual).
+  const { data: existing } = await supabase
+    .from("sheets_accounts")
+    .select("id")
+    .ilike("email", email)
+    .limit(1);
+  if (existing && existing.length > 0) {
+    await supabase
+      .from("sheets_accounts")
+      .update({
+        oauth_refresh_token: refreshToken,
+        enabled: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existing[0].id);
+  } else {
+    await supabase.from("sheets_accounts").insert({
+      email,
+      oauth_refresh_token: refreshToken,
+      enabled: true,
+      label: typeof body.label === "string" ? body.label : null,
+    });
+  }
+
+  return json({ ok: true, message: `Akun ${email} terhubung.`, email });
+}
+
+async function handleRevokeAccount(supabase: any, body: any): Promise<Response> {
+  const accountId = body.account_id;
+  if (!accountId) return json({ error: "account_id wajib diisi." }, 400);
+  // Nonaktifkan (bukan delete) — token di-nol-kan supaya tidak menggantung.
+  const { error } = await supabase
+    .from("sheets_accounts")
+    .update({
+      enabled: false,
+      oauth_refresh_token: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", accountId);
+  if (error) throw new Error(`Gagal revoke akun: ${error.message}`);
+  return json({ ok: true, message: "Akun dinonaktifkan. User terikat tetap terbaca dari arsip; user baru diarahkan ke akun lain." });
+}
+
+// ─── Arsip bulanan (cold storage) ────────────────────────────────────────
+
+/**
+ * Arsip SEMUA tab spreadsheet user ke sheets_archive (Supabase), lalu
+ * kosongkan tab di spreadsheet (cloud panas tetap ramping).
+ * IDEMPOTENT: unique(user_id, bulan, tab) → upsert menimpa, jalan 2× aman.
+ * Hapus di sheet HANYA setelah semua tab berhasil tersimpan.
+ */
+async function handleArchiveMonth(supabase: any, body: any): Promise<Response> {
+  const { user_id, bulan } = body;
+  if (!user_id || !bulan || !/^\d{4}-\d{2}$/.test(bulan)) {
+    return json({ error: "user_id dan bulan (format YYYY-MM) wajib diisi." }, 400);
+  }
+  const { data } = await supabase
+    .from("sheets_registry")
+    .select("spreadsheet_id, account_id")
+    .eq("user_id", user_id)
+    .maybeSingle();
+  if (!data?.spreadsheet_id) {
+    return json({ error: "User belum punya spreadsheet." }, 404);
+  }
+  const { token } = await tokenForAccount(supabase, data.account_id ?? null);
+  const spreadsheetId = data.spreadsheet_id;
+
+  // 1. Baca isi semua tab yang ada.
+  const meta = await googleFetch(
+    token,
+    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties.title`,
+  );
+  const titles: string[] = (meta?.sheets ?? [])
+    .map((s: any) => s?.properties?.title)
+    .filter(Boolean);
+
+  const results: Record<string, number> = {};
+  for (const tab of titles) {
+    const vals = await googleFetch(
+      token,
+      `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab)}?majorDimension=ROWS`,
+    );
+    const rows: any[][] = vals?.values ?? [];
+    // Baris pertama dianggap header — tidak ikut dihitung arsip.
+    const dataRows = rows.length > 0 ? rows.slice(1) : [];
+    const { error } = await supabase.from("sheets_archive").upsert(
+      {
+        user_id,
+        bulan,
+        tab,
+        rows: dataRows,
+        row_count: dataRows.length,
+        archived_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,bulan,tab" },
+    );
+    if (error) throw new Error(`Gagal arsip ${tab}: ${error.message}`);
+    results[tab] = dataRows.length;
+  }
+
+  // 2. Semua tab sudah aman di Supabase → kosongkan sheet (header ikut;
+  //    sync berikutnya menulis ulang header + data bulan berjalan).
+  for (const tab of titles) {
+    try {
+      await googleFetch(
+        token,
+        `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab + "!A1:Z100000")}:clear`,
+        { method: "POST" },
+      );
+    } catch (e) {
+      console.warn(`[sheets-admin] clear ${tab} gagal (diabaikan): ${e}`);
+    }
+  }
+
+  return json({
+    ok: true,
+    message: `Arsip ${bulan} tersimpan (${Object.values(results).reduce((a, b) => a + b, 0)} baris), sheet dikosongkan.`,
+    tabs: results,
+  });
+}
+
+async function handleListArchives(supabase: any, body: any): Promise<Response> {
+  let q = supabase
+    .from("sheets_archive")
+    .select("user_id, bulan, tab, row_count, archived_at")
+    .order("bulan", { ascending: false })
+    .limit(500);
+  if (body.user_id) q = q.eq("user_id", body.user_id);
+  const { data, error } = await q;
+  if (error) throw new Error(`Gagal baca sheets_archive: ${error.message}`);
+  return json({ archives: data ?? [] });
+}
+
+/** Data arsip untuk APP: bulan lama dibaca dari Supabase (cold tier). */
+async function handleGetArchives(supabase: any, body: any): Promise<Response> {
+  const { user_id, bulan, tab } = body;
+  if (!user_id) return json({ error: "user_id wajib diisi." }, 400);
+  let q = supabase
+    .from("sheets_archive")
+    .select("bulan, tab, rows, row_count")
+    .eq("user_id", user_id);
+  if (bulan) q = q.eq("bulan", bulan);
+  if (tab) q = q.eq("tab", tab);
+  const { data, error } = await q.limit(20);
+  if (error) throw new Error(`Gagal baca arsip: ${error.message}`);
+  return json({ archives: data ?? [] });
+}
+
 // ─── User app actions ────────────────────────────────────────────────────
 
 async function handleGetLink(supabase: any, body: any): Promise<Response> {
@@ -445,11 +724,13 @@ async function handleCreateSpreadsheet(supabase: any, body: any): Promise<Respon
     });
   }
 
-  const { token } = await requireAccessToken(supabase);
+  // Auto-select akun Google paling longgar (multi-akun); null = akun utama.
+  const accountId = await pickLeastLoadedAccount(supabase);
+  const { token } = await tokenForAccount(supabase, accountId);
   const { spreadsheetId, url } = await sheetsCreate(
     token,
     store_name ? `Laporan NUSA — ${store_name}` : "Laporan NUSA",
-    ["Laporan", "Produk", "Transaksi", "Stok", "Keuangan", "Karyawan", "Pelanggan", "Supplier", "Promo", "Presensi"],
+    SHEETS_TABS,
   );
   await sheetsShare(token, spreadsheetId, email || "");
 
@@ -461,6 +742,7 @@ async function handleCreateSpreadsheet(supabase: any, body: any): Promise<Respon
       variant: variant || "",
       spreadsheet_id: spreadsheetId,
       spreadsheet_url: url,
+      account_id: accountId,
       status: "ready",
       error: null,
       updated_at: new Date().toISOString(),
@@ -477,17 +759,17 @@ async function handleWrite(supabase: any, body: any): Promise<Response> {
   }
 
   // Validasi kepemilikan: registry[user_id].spreadsheet_id == spreadsheet_id
-  // (anti tulis spreadsheet orang lain).
+  // (anti tulis spreadsheet orang lain) + tahu spreadsheet itu milik akun mana.
   const { data } = await supabase
     .from("sheets_registry")
-    .select("spreadsheet_id, status, error")
+    .select("spreadsheet_id, status, error, account_id")
     .eq("user_id", user_id)
     .maybeSingle();
   if (!data || data.spreadsheet_id !== spreadsheet_id) {
     return json({ error: "Spreadsheet bukan milik user ini." }, 403);
   }
 
-  const { token } = await requireAccessToken(supabase);
+  const { token } = await tokenForAccount(supabase, data.account_id ?? null);
   await sheetsWrite(token, spreadsheet_id, tab, Array.isArray(values) ? values : [], Array.isArray(requests) ? requests : []);
   await supabase.from("sheets_registry").update({
     status: "ready",
@@ -530,31 +812,49 @@ Deno.serve(async (req: Request) => {
       // ── Admin ──
       case "oauth_status":
       case "oauth_callback":
+      case "oauth_callback_account":
       case "oauth_consent_url":
       case "test_credential":
       case "list_users":
+      case "list_accounts":
+      case "revoke_account":
+      case "archive_month":
+      case "list_archives":
         if (!isAdmin(req)) return json({ error: "Unauthorized" }, 401);
         result =
           action === "oauth_status"
             ? await handleOAuthStatus(supabase)
             : action === "oauth_callback"
             ? await handleOAuthCallback(supabase, body)
+            : action === "oauth_callback_account"
+            ? await handleOAuthCallbackAccount(supabase, body)
             : action === "oauth_consent_url"
             ? await handleOAuthConsentUrl()
             : action === "test_credential"
             ? await handleTestCredential(supabase)
-            : await handleListUsers(supabase);
+            : action === "list_users"
+            ? await handleListUsers(supabase)
+            : action === "list_accounts"
+            ? await handleListAccounts(supabase)
+            : action === "revoke_account"
+            ? await handleRevokeAccount(supabase, body)
+            : action === "archive_month"
+            ? await handleArchiveMonth(supabase, body)
+            : await handleListArchives(supabase, body);
         break;
 
       // ── User app ──
       case "get_link":
       case "create_spreadsheet":
       case "write":
+      case "get_archives":
         result =
           action === "get_link"
             ? await handleGetLink(supabase, body)
             : action === "create_spreadsheet"
             ? await handleCreateSpreadsheet(supabase, body)
+            : action === "get_archives"
+            ? await handleGetArchives(supabase, body)
             : await handleWrite(supabase, body);
         break;
 
