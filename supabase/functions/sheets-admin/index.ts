@@ -40,6 +40,7 @@
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ADMIN_KEY, isAdmin, serviceClient, archiveUserMonth } from "./shared.ts";
 
 // ─── CORS ────────────────────────────────────────────────────────────────
 const corsHeaders = {
@@ -49,7 +50,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "nusa-admin-2024";
 const OAUTH_CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
 const OAUTH_CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET") ?? "";
 
@@ -333,13 +333,7 @@ async function sheetsWrite(
   }
 }
 
-// ─── Supabase helpers ────────────────────────────────────────────────────
-function serviceClient() {
-  return createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-  );
-}
+// ─── Supabase helpers ── (di shared.ts, dipakai bareng sheets-archive-cron)
 
 // ─── Handlers ────────────────────────────────────────────────────────────
 
@@ -584,76 +578,19 @@ async function handleRevokeAccount(supabase: any, body: any): Promise<Response> 
 /**
  * Arsip SEMUA tab spreadsheet user ke sheets_archive (Supabase), lalu
  * kosongkan tab di spreadsheet (cloud panas tetap ramping).
- * IDEMPOTENT: unique(user_id, bulan, tab) → upsert menimpa, jalan 2× aman.
- * Hapus di sheet HANYA setelah semua tab berhasil tersimpan.
+ * Logika di shared.ts → dipakai juga oleh cron otomatis (satu sumber).
  */
 async function handleArchiveMonth(supabase: any, body: any): Promise<Response> {
   const { user_id, bulan } = body;
   if (!user_id || !bulan || !/^\d{4}-\d{2}$/.test(bulan)) {
     return json({ error: "user_id dan bulan (format YYYY-MM) wajib diisi." }, 400);
   }
-  const { data } = await supabase
-    .from("sheets_registry")
-    .select("spreadsheet_id, account_id")
-    .eq("user_id", user_id)
-    .maybeSingle();
-  if (!data?.spreadsheet_id) {
-    return json({ error: "User belum punya spreadsheet." }, 404);
-  }
-  const { token } = await tokenForAccount(supabase, data.account_id ?? null);
-  const spreadsheetId = data.spreadsheet_id;
-
-  // 1. Baca isi semua tab yang ada.
-  const meta = await googleFetch(
-    token,
-    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties.title`,
-  );
-  const titles: string[] = (meta?.sheets ?? [])
-    .map((s: any) => s?.properties?.title)
-    .filter(Boolean);
-
-  const results: Record<string, number> = {};
-  for (const tab of titles) {
-    const vals = await googleFetch(
-      token,
-      `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab)}?majorDimension=ROWS`,
-    );
-    const rows: any[][] = vals?.values ?? [];
-    // Baris pertama dianggap header — tidak ikut dihitung arsip.
-    const dataRows = rows.length > 0 ? rows.slice(1) : [];
-    const { error } = await supabase.from("sheets_archive").upsert(
-      {
-        user_id,
-        bulan,
-        tab,
-        rows: dataRows,
-        row_count: dataRows.length,
-        archived_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,bulan,tab" },
-    );
-    if (error) throw new Error(`Gagal arsip ${tab}: ${error.message}`);
-    results[tab] = dataRows.length;
-  }
-
-  // 2. Semua tab sudah aman di Supabase → kosongkan sheet (header ikut;
-  //    sync berikutnya menulis ulang header + data bulan berjalan).
-  for (const tab of titles) {
-    try {
-      await googleFetch(
-        token,
-        `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab + "!A1:Z100000")}:clear`,
-        { method: "POST" },
-      );
-    } catch (e) {
-      console.warn(`[sheets-admin] clear ${tab} gagal (diabaikan): ${e}`);
-    }
-  }
-
+  const { tabs } = await archiveUserMonth(supabase, user_id, bulan);
+  const total = Object.values(tabs).reduce((a, b) => a + b, 0);
   return json({
     ok: true,
-    message: `Arsip ${bulan} tersimpan (${Object.values(results).reduce((a, b) => a + b, 0)} baris), sheet dikosongkan.`,
-    tabs: results,
+    message: `Arsip ${bulan} tersimpan (${total} baris), sheet dikosongkan.`,
+    tabs,
   });
 }
 
@@ -868,7 +805,4 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-// isAdmin: cek x-admin-key (mirip license-manager / ai-assistant).
-function isAdmin(req: Request): boolean {
-  return req.headers.get("x-admin-key") === ADMIN_KEY;
-}
+// isAdmin: di shared.ts (dipakai bareng sheets-archive-cron).
