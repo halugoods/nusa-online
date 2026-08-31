@@ -36,6 +36,9 @@
 //                                                       (auto-select akun Google paling longgar)
 //     write                   {user_id, spreadsheet_id, tab, values[], requests[]}
 //                                                     → tulis data + format (validasi kepemilikan)
+//     append                  {user_id, spreadsheet_id, tab, values[], key_column_index?}
+//                                                     → live sync append-only (dedup by kolom kunci,
+//                                                       idempotent — v2.2.57+122)
 //     get_archives            {user_id, bulan?}       → data bulan lama dari arsip Supabase (cold tier)
 // ============================================================================
 
@@ -331,6 +334,52 @@ async function sheetsWrite(
       body: JSON.stringify({ requests: translated }),
     });
   }
+}
+
+/**
+ * Append baris baru ke tab (live sync, v2.2.57+122). IDEMPOTEN: baca kolom
+ * kunci existing (default kolom A), buang baris yang kuncinya sudah ada,
+ * lalu values:append sisanya. App TIDAK perlu marker lokal — dedup by key
+ * membuat retry / 2 device / flush ganda tetap aman. Baris header dikirim
+ * app sebagai baris pertama values: jika header sudah ada di kolom kunci,
+ * baris header otomatis tersaring; jika tab masih kosong, header ikut
+ * ter-append. (Anti lost-update: append-only, tidak pernah menimpa.)
+ */
+async function sheetsAppend(
+  token: string,
+  spreadsheetId: string,
+  tab: string,
+  values: any[][],
+  keyColumnIndex = 0,
+): Promise<{ appended: number }> {
+  if (!Array.isArray(values) || values.length === 0) return { appended: 0 };
+
+  // Baca kolom kunci existing (COLUMNS dimension → array[0] = kolom A).
+  let existingKeys = new Set<string>();
+  try {
+    const col = await googleFetch(
+      token,
+      `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab + "!A:AZ")}?majorDimension=COLUMNS`,
+    );
+    const columns: any[][] = col?.values ?? [];
+    const keyCol = columns[keyColumnIndex] ?? [];
+    existingKeys = new Set(keyCol.map((v: any) => String(v)));
+  } catch {
+    // Tab belum ada isinya → Google balas kosong → semua baris dianggap baru.
+  }
+
+  const fresh = values.filter((r) => {
+    const key = String(r[keyColumnIndex] ?? "");
+    return key === "" ? true : !existingKeys.has(key);
+  });
+  if (fresh.length === 0) return { appended: 0 };
+
+  await googleFetch(
+    token,
+    `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(tab + "!A1")}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    { method: "POST", body: JSON.stringify({ values: fresh }) },
+  );
+  return { appended: fresh.length };
 }
 
 // ─── Supabase helpers ── (di shared.ts, dipakai bareng sheets-archive-cron)
@@ -717,6 +766,41 @@ async function handleWrite(supabase: any, body: any): Promise<Response> {
   return json({ ok: true });
 }
 
+/// Live sync append (v2.2.57+122) — kepemilikan divalidasi sama seperti
+/// `write`, tapi baris di-APPEND dengan dedup by kolom kunci (lihat
+/// [sheetsAppend]); tidak pernah menimpa baris lama.
+async function handleAppend(supabase: any, body: any): Promise<Response> {
+  const { user_id, spreadsheet_id, tab, values, key_column_index } = body;
+  if (!user_id || !spreadsheet_id || !tab) {
+    return json({ error: "user_id, spreadsheet_id, tab wajib diisi." }, 400);
+  }
+
+  const { data } = await supabase
+    .from("sheets_registry")
+    .select("spreadsheet_id, status, error, account_id")
+    .eq("user_id", user_id)
+    .maybeSingle();
+  if (!data || data.spreadsheet_id !== spreadsheet_id) {
+    return json({ error: "Spreadsheet bukan milik user ini." }, 403);
+  }
+
+  const { token } = await tokenForAccount(supabase, data.account_id ?? null);
+  const { appended } = await sheetsAppend(
+    token,
+    spreadsheet_id,
+    tab,
+    Array.isArray(values) ? values : [],
+    typeof key_column_index === "number" ? key_column_index : 0,
+  );
+  await supabase.from("sheets_registry").update({
+    status: "ready",
+    error: null,
+    updated_at: new Date().toISOString(),
+  }).eq("user_id", user_id);
+
+  return json({ ok: true, appended });
+}
+
 // ─── Router ──────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
@@ -784,6 +868,7 @@ Deno.serve(async (req: Request) => {
       case "get_link":
       case "create_spreadsheet":
       case "write":
+      case "append":
       case "get_archives":
         result =
           action === "get_link"
@@ -792,6 +877,8 @@ Deno.serve(async (req: Request) => {
             ? await handleCreateSpreadsheet(supabase, body)
             : action === "get_archives"
             ? await handleGetArchives(supabase, body)
+            : action === "append"
+            ? await handleAppend(supabase, body)
             : await handleWrite(supabase, body);
         break;
 
