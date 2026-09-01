@@ -154,11 +154,13 @@ async function tokenForAccount(
   return { token: await getAccessToken(data.oauth_refresh_token), ownerEmail: data.email };
 }
 
-/** Auto-select: akun tambahan enabled dengan user paling SEDIKIT (paling longgar). */
+/** Auto-select: akun tambahan enabled dengan user paling SEDIKIT (paling longgar).
+ *  TANPA batas user/akun (keputusan user 2026-09-01) — limit hanya untuk
+ *  Cloud Google (drive_accounts); Sheets cukup pilih yang paling kosong. */
 async function pickLeastLoadedAccount(supabase: any): Promise<string | null> {
   const { data: accounts, error } = await supabase
     .from("sheets_accounts")
-    .select("id, max_users")
+    .select("id")
     .eq("enabled", true);
   if (error || !accounts || accounts.length === 0) return null;
   const { data: regs } = await supabase
@@ -169,12 +171,12 @@ async function pickLeastLoadedAccount(supabase: any): Promise<string | null> {
     if (r?.account_id) filled.set(r.account_id, (filled.get(r.account_id) ?? 0) + 1);
   });
   let best: string | null = null;
-  let bestRoom = -1;
+  let bestCount = Infinity;
   for (const a of accounts) {
-    const room = (a.max_users ?? 50) - (filled.get(a.id) ?? 0);
-    if (room > bestRoom) { bestRoom = room; best = a.id; }
+    const count = filled.get(a.id) ?? 0;
+    if (count < bestCount) { bestCount = count; best = a.id; }
   }
-  return bestRoom > 0 ? best : null;
+  return best;
 }
 // ─── Google Sheets REST helpers (fetch langsung, tanpa SDK) ──────────────
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";

@@ -356,9 +356,9 @@ export default function SpreadsheetsTab() {
           <div>
             <p className="font-semibold text-gray-900 text-sm">Akun Google (Kapasitas User)</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              1 akun Google menampung maks ±50 user (kuota Drive 15GB + limit API).
-              Penuh? Tambah akun Google baru: login dengan akun itu → paste kode di sini.
-              Spreadsheet user baru otomatis masuk ke akun paling longgar.
+              TANPA batas user per akun (limit hanya untuk Cloud Google).
+              Tambah akun Google baru: login dengan akun itu → paste kode di sini.
+              Spreadsheet user baru otomatis masuk ke akun paling kosong.
             </p>
           </div>
           <button
@@ -384,7 +384,7 @@ export default function SpreadsheetsTab() {
                   <span className="ml-2 text-[10px] uppercase tracking-wide text-gray-400">utama</span>
                 </p>
                 <p className="text-xs text-gray-400">
-                  {accounts.main_account.users}/{accounts.main_account.max_users} user
+                  {accounts.main_account.users} user
                   {accounts.main_account.enabled ? "" : " · nonaktif"}
                 </p>
               </div>
@@ -401,7 +401,6 @@ export default function SpreadsheetsTab() {
 
             {/* Akun tambahan */}
             {(accounts.accounts ?? []).map((a) => {
-              const full = a.users >= a.max_users;
               return (
                 <div
                   key={a.id}
@@ -414,8 +413,8 @@ export default function SpreadsheetsTab() {
                         <span className="ml-2 text-[10px] text-gray-400">({a.label})</span>
                       )}
                     </p>
-                    <p className={`text-xs ${full ? "text-red-500 font-medium" : "text-gray-400"}`}>
-                      {a.users}/{a.max_users} user{full ? " · PENUH" : ""}
+                    <p className="text-xs text-gray-400">
+                      {a.users} user
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -423,12 +422,10 @@ export default function SpreadsheetsTab() {
                       className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${
                         !a.enabled
                           ? "bg-gray-50 text-gray-500 border-gray-200"
-                          : full
-                          ? "bg-red-50 text-red-600 border-red-200"
                           : "bg-green-50 text-green-700 border-green-200"
                       }`}
                     >
-                      {!a.enabled ? "Nonaktif" : full ? "Penuh" : "Aktif"}
+                      {!a.enabled ? "Nonaktif" : "Aktif"}
                     </span>
                     {a.enabled && (
                       <button
