@@ -12,7 +12,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchDriveConsentUrl,
-  submitDriveAccountCode,
   listDriveAccounts,
   revokeDriveAccount,
   listDriveRegistry,
@@ -51,9 +50,6 @@ function formatDate(iso: string | null): string {
 export default function CloudGoogleTab() {
   // Akun Drive
   const [accounts, setAccounts] = useState<DriveAccount[] | null>(null);
-  const [addingAccount, setAddingAccount] = useState(false);
-  const [accountCode, setAccountCode] = useState("");
-  const [accountLabel, setAccountLabel] = useState("");
 
   // Registry
   const [registry, setRegistry] = useState<DriveRegistryRow[]>([]);
@@ -111,26 +107,6 @@ export default function CloudGoogleTab() {
     reloadArsip();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  async function handleAddAccount() {
-    const code = accountCode.trim();
-    if (!code) {
-      setBusy("Tempel dulu kode dari halaman Google (login dengan akun Drive khusus).");
-      return;
-    }
-    setAddingAccount(true);
-    setBusy("");
-    try {
-      const r = await submitDriveAccountCode(code, accountLabel.trim() || undefined);
-      setAccountCode("");
-      setAccountLabel("");
-      setBusy(`✅ ${r.email ? `${r.email} terhubung.` : "Akun Drive terhubung."}`);
-      await reloadAccounts();
-    } catch (e: any) {
-      setBusy(e.message);
-    }
-    setAddingAccount(false);
-  }
 
   async function handleRevokeAccount(id: string, email: string) {
     if (!confirm(`Nonaktifkan akun ${email}? Backup tidak hilang, tapi akun ini tidak dipakai lagi.`)) return;
@@ -260,60 +236,25 @@ export default function CloudGoogleTab() {
           </div>
         )}
 
-        {/* Add akun (paste-code flow, pola sama dengan Sheets) */}
-        <details className="text-sm">
-          <summary className="cursor-pointer text-primary font-medium select-none">
-            + Tambah Akun Google Drive Baru
-          </summary>
-          <div className="mt-3 space-y-3">
-            <ol className="list-decimal ml-5 text-xs text-gray-500 space-y-1">
-              <li>
-                Klik{" "}
-                <button
-                  onClick={async () => {
-                    try {
-                      const url = await fetchDriveConsentUrl();
-                      window.open(url, "_blank", "noopener,noreferrer");
-                    } catch (e: any) {
-                      setBusy(e.message);
-                    }
-                  }}
-                  className="text-primary font-medium underline"
-                >
-                  buka halaman izin Google
-                </button>{" "}
-                — login dengan <b>akun Google khusus backup</b>.
-              </li>
-              <li>
-                Browser diarahkan ke <span className="font-mono">127.0.0.1</span> (gagal koneksi —{" "}
-                <b>itu normal</b>). Salin <b>kode</b> dari address bar (mulai{" "}
-                <span className="font-mono">4/0…</span>).
-              </li>
-              <li>Tempel kodenya di bawah → Tambah Akun.</li>
-            </ol>
-            <div className="flex gap-2 flex-wrap">
-              <input
-                value={accountCode}
-                onChange={(e) => setAccountCode(e.target.value)}
-                placeholder="Tempel kode 4/0… di sini"
-                className="flex-1 min-w-56 px-3 py-2 border border-input-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <input
-                value={accountLabel}
-                onChange={(e) => setAccountLabel(e.target.value)}
-                placeholder="Label (opsional)"
-                className="w-40 px-3 py-2 border border-input-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                onClick={handleAddAccount}
-                disabled={addingAccount}
-                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors disabled:opacity-50 text-sm"
-              >
-                {addingAccount ? "Menyambungkan…" : "Tambah Akun"}
-              </button>
-            </div>
-          </div>
-        </details>
+        {/* Tambah akun — satu klik: consent Google → redirect balik ke
+            /drive-callback → akun tersambung otomatis (tanpa copy-paste). */}
+        <button
+          onClick={async () => {
+            setBusy("");
+            try {
+              const url = await fetchDriveConsentUrl();
+              window.location.href = url; // pergi ke Google, balik otomatis
+            } catch (e: any) {
+              setBusy(e.message);
+            }
+          }}
+          className="px-4 py-2 bg-primary hover:bg-primary-dark text-white font-semibold rounded-xl transition-colors text-sm"
+        >
+          + Tambah Akun Google Drive
+        </button>
+        <p className="text-xs text-gray-400">
+          Klik → pilih akun Google backup → izinkan. Kamu otomatis dibawa balik ke sini.
+        </p>
       </div>
 
       {/* ── Migrasi dari Supabase ── */}

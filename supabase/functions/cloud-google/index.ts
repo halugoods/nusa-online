@@ -35,12 +35,16 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ADMIN_KEY = Deno.env.get("NUSA_ADMIN_KEY") ?? "nusa-admin-2024";
-const OAUTH_CLIENT_ID = Deno.env.get("GOOGLE_OAUTH_CLIENT_ID") ?? "";
-const OAUTH_CLIENT_SECRET = Deno.env.get("GOOGLE_OAUTH_CLIENT_SECRET") ?? "";
+// Client KHUSUS Cloud Google (Web app milik akun backup — TERPISAH dari
+// client Sheets). Kredensial sekali-set via `supabase secrets set`.
+const OAUTH_CLIENT_ID = Deno.env.get("DRIVE_OAUTH_CLIENT_ID") ?? "";
+const OAUTH_CLIENT_SECRET = Deno.env.get("DRIVE_OAUTH_CLIENT_SECRET") ?? "";
 const OAUTH_TOKEN_URL = "https://oauth2.googleapis.com/token";
 // drive.file: app hanya melihat file yang dibuatnya sendiri (aman + cukup).
 const OAUTH_SCOPE = "https://www.googleapis.com/auth/drive.file";
-const OAUTH_REDIRECT_URI = "http://127.0.0.1:43210";
+// Redirect balik ke dashboard → user tinggal klik izinkan, TANPA copy-paste
+// kode (client Web app: URI ini wajib terdaftar persis di Google Console).
+const OAUTH_REDIRECT_URI = "https://nusa-online.vercel.app/drive-callback";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const BACKUP_BUCKET = "nusa-backups";
@@ -315,7 +319,7 @@ async function handleAddAccount(supabase: any, body: any): Promise<Response> {
     // code tanpa encode — biarkan.
   }
   if (!OAUTH_CLIENT_ID || !OAUTH_CLIENT_SECRET) {
-    return json({ error: "GOOGLE_OAUTH_CLIENT_ID / SECRET belum di-set di Supabase." }, 500);
+    return json({ error: "DRIVE_OAUTH_CLIENT_ID / SECRET belum di-set di Supabase (sekali saja via CLI)." }, 500);
   }
 
   const res = await fetch(OAUTH_TOKEN_URL, {
