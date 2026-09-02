@@ -208,11 +208,16 @@ async function upsertStore(supabase: any, params: any) {
   // Target: row milik user (userRow), lalu row legacy by store_id,
   // lalu insert baru. UPDATE mempertahankan store_id asli (produk/order
   // lama tetap tertaut) — hanya data konfigurasi yang berubah.
+  // v2.2.57+127 FIX: JANGAN ikutkan store_id di payload UPDATE — sebelumnya
+  // store_id row lama TERTIMPA activation key baru saat clear-data/reinstall
+  // → slug mismatch antar storefront + order tidak nempel ke row yang benar.
   const targetId = userRow?.store_id ?? legacyRow?.store_id;
   if (targetId) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { store_id: _ignored, ...updateRow } = row;
     const { error } = await supabase
       .from("store_settings")
-      .update(row)
+      .update(updateRow)
       .eq("store_id", targetId);
     if (error) return jsonResponse({ error: error.message }, 500);
     return jsonResponse({ ok: true, store_id: targetId, claimed: legacyRow && !userRow ? true : false });
@@ -350,7 +355,7 @@ async function syncProducts(supabase: any, params: any) {
 
 // ─── Get orders for a store ────────────────────────────────────────
 async function getOrders(supabase: any, params: any) {
-  const { store_id, status, limit } = params;
+  const { store_id, status, limit, user_id, variant } = params;
   if (!store_id) return jsonResponse({ error: "store_id required" }, 400);
 
   let query = supabase
@@ -368,7 +373,33 @@ async function getOrders(supabase: any, params: any) {
   const { data, error } = await query;
   if (error) return jsonResponse({ error: error.message }, 500);
 
-  return jsonResponse({ orders: data ?? [] });
+  let orders = data ?? [];
+
+  // v2.2.57+127 fallback: app yang clear-data/reinstall memakai activation
+  // key BARU sebagai store_id, sedangkan order lama nempel ke store_id row
+  // ASLI. Kalau lookup by store_id kosong padahal user punya row toko
+  // (user_id+variant), ambil order lewat store_id row toko itu.
+  if (orders.length === 0 && user_id) {
+    const { data: storeRow } = await supabase
+      .from("store_settings")
+      .select("store_id")
+      .eq("user_id", user_id ?? null)
+      .eq("variant", variant ?? "")
+      .maybeSingle();
+    if (storeRow?.store_id && storeRow.store_id !== store_id) {
+      let q2 = supabase
+        .from("online_orders")
+        .select("*")
+        .eq("store_id", storeRow.store_id)
+        .order("created_at", { ascending: false });
+      if (status) q2 = q2.eq("status", status);
+      q2 = q2.limit(limit ?? 50);
+      const { data: data2, error: err2 } = await q2;
+      if (!err2) orders = data2 ?? [];
+    }
+  }
+
+  return jsonResponse({ orders });
 }
 
 // ─── Update order status (state machine) ───────────────────────────
@@ -381,10 +412,25 @@ async function getOrders(supabase: any, params: any) {
 //   "Direfund"                    → []   (terminal)
 //   "Dibatalkan"                  → []
 async function updateOrder(supabase: any, params: any) {
-  const { store_id, order_id, status, processed_by } = params;
+  const { store_id, order_id, status, processed_by, user_id, variant } = params;
   if (!store_id || !order_id || !status) {
     return jsonResponse({ error: "store_id, order_id, status required" }, 400);
   }
+
+  // v2.2.57+127: resolve store_id efektif — bila order tidak ada di
+  // store_id yang dikirim (activation key baru), coba store_id row toko
+  // milik user (user_id+variant) supaya status tetap bisa diubah.
+  let effectiveStoreId = store_id;
+  const resolveStore = async (): Promise<string | null> => {
+    if (!user_id) return null;
+    const { data: storeRow } = await supabase
+      .from("store_settings")
+      .select("store_id")
+      .eq("user_id", user_id ?? null)
+      .eq("variant", variant ?? "")
+      .maybeSingle();
+    return storeRow?.store_id ?? null;
+  };
 
   // Validate state transition
   const validTransitions: Record<string, string[]> = {
@@ -398,20 +444,40 @@ async function updateOrder(supabase: any, params: any) {
   };
 
   // Get current status
+  let orderRow: any = null;
+  let effectiveStoreIdFinal = effectiveStoreId;
   const { data: existing } = await supabase
     .from("online_orders")
     .select("status, used_points, customer_phone, store_id")
     .eq("id", order_id)
-    .eq("store_id", store_id)
+    .eq("store_id", effectiveStoreId)
     .single();
+  if (existing) orderRow = existing;
 
-  if (!existing) return jsonResponse({ error: "Order not found" }, 404);
+  // Fallback: order nempel ke store_id row toko asli (beda dari key baru).
+  if (!orderRow && user_id) {
+    const resolved = await resolveStore();
+    if (resolved && resolved !== store_id) {
+      const { data: alt } = await supabase
+        .from("online_orders")
+        .select("status, used_points, customer_phone, store_id")
+        .eq("id", order_id)
+        .eq("store_id", resolved)
+        .single();
+      if (alt) {
+        orderRow = alt;
+        effectiveStoreIdFinal = resolved;
+      }
+    }
+  }
 
-  const currentStatus = existing.status;
-  const allowed = validTransitions[currentStatus];
+  if (!orderRow) return jsonResponse({ error: "Order not found" }, 404);
+  effectiveStoreId = effectiveStoreIdFinal;
+  const currentStatusValue = orderRow.status;
+  const allowed = validTransitions[currentStatusValue];
   if (!allowed || !allowed.includes(status)) {
     return jsonResponse({
-      error: `Cannot transition from '${currentStatus}' to '${status}'`,
+      error: `Cannot transition from '${currentStatusValue}' to '${status}'`,
       allowed,
     }, 400);
   }
@@ -425,15 +491,15 @@ async function updateOrder(supabase: any, params: any) {
   }
 
   // Lunas: akumulasi poin + total_spent ke online_customers (GAS pattern).
-  if (status === "Lunas" && (existing.used_points > 0 || existing.customer_phone)) {
-    await applyOrderToCustomer(supabase, store_id, existing, params);
+  if (status === "Lunas" && (orderRow.used_points > 0 || orderRow.customer_phone)) {
+    await applyOrderToCustomer(supabase, effectiveStoreId, orderRow, params);
   }
 
   const { error } = await supabase
     .from("online_orders")
     .update(updates)
     .eq("id", order_id)
-    .eq("store_id", store_id);
+    .eq("store_id", effectiveStoreId);
 
   if (error) return jsonResponse({ error: error.message }, 500);
 
