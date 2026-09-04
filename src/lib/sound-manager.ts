@@ -3,19 +3,20 @@
 /**
  * Sound manager (v2.2.55) — kelola suara notifikasi aplikasi NUSA Kasir.
  *
- * Semua file audio disimpan di bucket publik `nusa-sounds`:
- *   - `{key}.{ext}`          → file audio custom per slot
- *   - `manifest.json`        → { version, sounds: { key: filename } }
+ * Semua file audio disimpan di R2 nusa-images dengan prefix `sounds/`:
+ *   - `sounds/{key}.{ext}`  → file audio custom per slot
+ *   - `sounds/manifest.json` → { version, sounds: { key: filename } }
+ *
+ * Worker melayani via /storage/nusa-images/sounds/... (auth x-admin-key untuk
+ * tulis, /img/nusa-images/sounds/... untuk baca publik).
  *
  * App (Flutter) membaca manifest.json saat start; kalau version lebih baru
  * dari cache lokal, file yang berubah diunduh ke penyimpanan app lalu
  * dipakai sebagai pengganti asset bawaan.
  */
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const STORAGE_URL = `${SUPABASE_URL}/storage/v1/object`;
-const BUCKET = "nusa-sounds";
-const ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 export interface SoundSlotDef {
   key: string;
@@ -41,28 +42,26 @@ export interface SoundsManifest {
 }
 
 function manifestUrl(): string {
-  return `${STORAGE_URL}/${BUCKET}/manifest.json`;
+  return `${WORKER_URL}/img/nusa-images/sounds/manifest.json`;
 }
 
 function publicFileUrl(filename: string): string {
-  return `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${filename}`;
+  return `${WORKER_URL}/img/nusa-images/sounds/${filename}`;
 }
 
 function authHeaders(contentType?: string): HeadersInit {
-  // Bucket publik: tulis lewat anon key (pola sama dengan uploadThumbnail).
+  const adminKey = typeof window !== "undefined"
+    ? localStorage.getItem("nusa_admin_key") ?? ""
+    : "";
   return {
-    "apikey": ANON_KEY,
+    "x-admin-key": adminKey,
     ...(contentType ? { "Content-Type": contentType } : {}),
-    "Authorization": `Bearer ${ANON_KEY}`,
   };
 }
 
 /** Baca manifest saat ini; null = belum ada custom sound sama sekali. */
 export async function fetchManifest(): Promise<SoundsManifest | null> {
   try {
-    // Tanpa no-store: manifest jarang berubah (cuma pas upload/reset).
-    // Version naik tiap update → cache bust otomatis (app & dashboard
-    // bandingin version, bukan nama file). Mengurangi egress berulang.
     const res = await fetch(manifestUrl());
     if (!res.ok) return null;
     return (await res.json()) as SoundsManifest;
@@ -94,9 +93,9 @@ export async function uploadSound(file: File, slot: SoundSlotDef): Promise<Sound
   if (file.size > 2 * 1024 * 1024) throw new Error("Maksimal 2 MB per suara");
 
   const filename = `${slot.key}.${ext}`;
-  const res = await fetch(`${STORAGE_URL}/${BUCKET}/${filename}`, {
-    method: "PUT",
-    headers: authHeaders(file.type || "application/octet-stream"),
+  const res = await fetch(`${WORKER_URL}/storage/nusa-images/sounds/${filename}`, {
+    method: "POST",
+    headers: { ...authHeaders(file.type || "application/octet-stream"), "X-Upsert": "1" },
     body: file,
   });
   if (!res.ok) throw new Error(`Upload gagal (${res.status})`);
@@ -120,9 +119,10 @@ export async function resetSound(slot: SoundSlotDef): Promise<SoundsManifest> {
   await writeManifest(next);
   if (filename) {
     try {
-      await fetch(`${STORAGE_URL}/${BUCKET}/${filename}`, {
-        method: "DELETE",
-        headers: authHeaders(),
+      await fetch(`${WORKER_URL}/storage/nusa-images/remove`, {
+        method: "POST",
+        headers: authHeaders("application/json"),
+        body: JSON.stringify({ paths: [`sounds/${filename}`] }),
       });
     } catch {
       /* file orphan tidak fatal */
@@ -132,9 +132,9 @@ export async function resetSound(slot: SoundSlotDef): Promise<SoundsManifest> {
 }
 
 async function writeManifest(m: SoundsManifest): Promise<void> {
-  const res = await fetch(manifestUrl(), {
-    method: "PUT",
-    headers: authHeaders("application/json"),
+  const res = await fetch(`${WORKER_URL}/storage/nusa-images/sounds/manifest.json`, {
+    method: "POST",
+    headers: { ...authHeaders("application/json"), "X-Upsert": "1" },
     body: JSON.stringify(m),
   });
   if (!res.ok) throw new Error(`Simpan manifest gagal (${res.status})`);

@@ -1,7 +1,11 @@
 "use client";
 
-const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/license-manager`;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// v2.2.57+130 (Milestone D): license-manager pindah ke worker Cloudflare.
+// POST {WORKER}/api/license-manager/{action} — action di path, body = params.
+// Auth: x-admin-key header saja (worker cek terhadap NUSA_ADMIN_KEY).
+
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 export type LicenseTier = 'trial' | '1month' | 'lifetime';
 export type LicenseStatus = "Generated" | "Trial" | "Active" | "Cancelled" | "Expired";
@@ -34,7 +38,6 @@ export interface LicenseRecord {
   google_user_id?: string | null;
   activation_count: number;
   created_at: string;
-  // v2.2.57: versi app terakhir yang dipakai perangkat (diisi edge fn app_ping).
   last_app_version?: string | null;
   last_app_build?: number | null;
   last_seen_at?: string | null;
@@ -100,15 +103,13 @@ async function call(action: string, params: Record<string, unknown> = {}): Promi
   const adminKey = getAdminKey();
   if (!adminKey) throw new Error("Not authenticated");
 
-  const res = await fetch(EDGE_FUNCTION_URL, {
+  const res = await fetch(`${WORKER_URL}/api/license-manager/${action}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       "x-admin-key": adminKey,
     },
-    body: JSON.stringify({ action, ...params }),
+    body: JSON.stringify(params),
   });
 
   const data = await res.json();
@@ -118,15 +119,13 @@ async function call(action: string, params: Record<string, unknown> = {}): Promi
 
 export async function verifyAdminKey(key: string): Promise<boolean> {
   try {
-    const res = await fetch(EDGE_FUNCTION_URL, {
+    const res = await fetch(`${WORKER_URL}/api/license-manager/stats`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
         "x-admin-key": key,
       },
-      body: JSON.stringify({ action: "stats" }),
+      body: JSON.stringify({}),
     });
     return res.ok;
   } catch {
@@ -190,7 +189,6 @@ export async function revokeLicense(
   return call("revoke", { license_id: licenseId });
 }
 
-// ── v2.2.57+115: ubah status lisensi manual oleh admin (audited) ──────
 export async function setLicenseStatus(
   licenseId: string,
   status: LicenseStatus,
@@ -208,8 +206,6 @@ export async function deleteLicense(
 ): Promise<{ ok: boolean; message: string }> {
   return call("delete", { license_id: licenseId });
 }
-
-// ── v2.2.57: versi minimum app per produk (force-update) ─────────────
 
 export interface MinVersionRecord {
   product: string;

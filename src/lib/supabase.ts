@@ -1,16 +1,25 @@
-import { createClient } from "@supabase/supabase-js";
+// v2.2.57+130 (Milestone D): pembacaan publik storefront pindah dari
+// PostgREST langsung ke worker Cloudflare (/api/online-store/*). Nama file
+// dan SEMUA export tetap sama supaya konsumen (halaman toko, ProductCard)
+// tidak perlu diubah — hanya isi fetch-nya yang ganti.
+//
+// Worker: POST /api/online-store/{action} dengan body JSON 1:1 edge fn lama.
 
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  return createClient(url, key);
-}
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
-function requireSupabase() {
-  const client = getSupabase();
-  if (!client) throw new Error("Supabase not configured");
-  return client;
+async function callFn<T>(action: string, body: Record<string, unknown>): Promise<T | null> {
+  try {
+    const res = await fetch(`${WORKER_URL}/api/online-store/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
 }
 
 // ─── WA normalize (adaptasi GAS normalizePhoneTo08 + formatWA) ──────
@@ -135,28 +144,18 @@ export interface Branch {
   sort: number;
 }
 
-// ─── API helpers ────────────────────────────────────────────────────
+// ─── API helpers (worker /api/online-store) ─────────────────────────
 
 export async function getStore(storeId: string): Promise<StoreSettings | null> {
-  const supabase = requireSupabase();
-  const { data } = await supabase
-    .from("store_settings")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("is_active", true)
-    .single();
-  return data as StoreSettings | null;
+  const data = await callFn<{ store: StoreSettings }>("get_store", { store_id: storeId });
+  return data?.store ?? null;
 }
 
 export async function getStoreBySlug(slug: string): Promise<StoreSettings | null> {
-  const supabase = requireSupabase();
-  const { data } = await supabase
-    .from("store_settings")
-    .select("*")
-    .eq("slug", slug)
-    .eq("is_active", true)
-    .single();
-  return data as StoreSettings | null;
+  // Lookup toko lama tanpa variant — action khusus di worker (slug unik
+  // historis; row baru selalu punya variant → jalur utama getStoreByVariantSlug).
+  const data = await callFn<{ store: StoreSettings }>("get_store_by_slug", { slug });
+  return data?.store ?? null;
 }
 
 // Batch #9: lookup storefront by variant + slug — /toko/{variant}/{slug}
@@ -164,15 +163,11 @@ export async function getStoreByVariantSlug(
   variant: string,
   slug: string
 ): Promise<StoreSettings | null> {
-  const supabase = requireSupabase();
-  const { data } = await supabase
-    .from("store_settings")
-    .select("*")
-    .eq("variant", variant)
-    .eq("slug", slug)
-    .eq("is_active", true)
-    .maybeSingle();
-  return data as StoreSettings | null;
+  const data = await callFn<{ store: StoreSettings }>("get_store_by_variant_slug", {
+    variant,
+    slug,
+  });
+  return data?.store ?? null;
 }
 
 // Fallback: slug lama (tanpa variant) tetap bisa diakses untuk kompatibilitas
@@ -215,20 +210,11 @@ export async function getProducts(
   storeId: string,
   category?: string
 ): Promise<OnlineProduct[]> {
-  const supabase = requireSupabase();
-  let query = supabase
-    .from("online_products")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("is_published", true)
-    .order("name");
-
-  if (category && category !== "Semua") {
-    query = query.eq("category", category);
-  }
-
-  const { data } = await query;
-  return (data as OnlineProduct[]) ?? [];
+  const data = await callFn<{ products: OnlineProduct[] }>("get_products", {
+    store_id: storeId,
+    ...(category ? { category } : {}),
+  });
+  return data?.products ?? [];
 }
 
 // ─── Store config (order types, pickup, payment methods, branches) ──
@@ -319,28 +305,13 @@ export function tierDiscountPercent(
 }
 
 export async function getBranches(storeId: string): Promise<Branch[]> {
-  const supabase = requireSupabase();
-  const { data } = await supabase
-    .from("branches")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("is_active", true)
-    .order("sort", { ascending: true });
-  return (data as Branch[]) ?? [];
+  const data = await callFn<{ branches: Branch[] }>("get_branches", { store_id: storeId });
+  return data?.branches ?? [];
 }
 
 export async function getPromos(storeId: string): Promise<Promo[]> {
-  const supabase = requireSupabase();
-  const now = new Date().toISOString();
-  let query = supabase
-    .from("promos")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("is_active", true)
-    .or(`end_date.is.null,end_date.gte.${now}`)
-    .order("created_at", { ascending: false });
-  const { data } = await query;
-  return (data as Promo[]) ?? [];
+  const data = await callFn<{ promos: Promo[] }>("get_promos_public", { store_id: storeId });
+  return data?.promos ?? [];
 }
 
 // ─── Customer / member ──────────────────────────────────────────────
@@ -348,19 +319,16 @@ export async function getCustomer(
   storeId: string,
   phone: string
 ): Promise<OnlineCustomer | null> {
-  const supabase = requireSupabase();
   const p = normalizePhoneTo08(phone);
   if (!p) return null;
-  const { data } = await supabase
-    .from("online_customers")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("phone", p)
-    .maybeSingle();
-  return (data as OnlineCustomer) ?? null;
+  const data = await callFn<{ customer: OnlineCustomer | null }>("get_customer", {
+    store_id: storeId,
+    phone: p,
+  });
+  return data?.customer ?? null;
 }
 
-// ─── Submit order (via edge function — WA normalize + anti-dobel) ───
+// ─── Submit order (via worker — WA normalize + anti-dobel) ──────────
 export interface SubmitOrderResult {
   invoice: string;
   whatsappUrl: string;
@@ -391,61 +359,45 @@ export async function submitOrder(
   storeId: string,
   order: SubmitOrderInput
 ): Promise<SubmitOrderResult | null> {
-  const supabase = requireSupabase();
-  try {
-    const res = await supabase.functions.invoke("online-store", {
-      body: {
-        action: "submit_order",
-        store_id: storeId,
-        customer_name: order.customerName,
-        customer_phone: order.customerPhone,
-        items: order.items,
-        subtotal: order.subtotal,
-        discount: order.discount,
-        promo_code: order.promoCode,
-        handling_fee: order.handlingFee,
-        total: order.total,
-        payment_method: order.paymentMethod,
-        pickup_time: order.pickupTime,
-        branch: order.branch,
-        notes: order.notes,
-        order_type: order.orderType,
-        used_points: order.usedPoints,
-        used_promo_id: order.usedPromoId ?? null,
-        promo_discount: order.promoDiscount,
-        referred_by: order.referredBy ?? "",
-      },
-    });
-    if (res.error) throw new Error(res.error.message || "Gagal submit");
-    const data = res.data as any;
-    return {
-      invoice: data.invoice,
-      whatsappUrl: data.whatsappUrl ?? "",
-      status: data.status ?? "Online Baru",
-    };
-  } catch (e: any) {
-    // Fallback ke insert langsung (anon key punya RLS anon insert online_orders?)
-    // — edge function adalah jalur utama; kalau gagal lempar ke caller.
-    throw new Error(e.message || "Gagal submit pesanan");
-  }
+  const data = await callFn<SubmitOrderResult>("submit_order", {
+    store_id: storeId,
+    customer_name: order.customerName,
+    customer_phone: order.customerPhone,
+    items: order.items,
+    subtotal: order.subtotal,
+    discount: order.discount,
+    promo_code: order.promoCode,
+    handling_fee: order.handlingFee,
+    total: order.total,
+    payment_method: order.paymentMethod,
+    pickup_time: order.pickupTime,
+    branch: order.branch,
+    notes: order.notes,
+    order_type: order.orderType,
+    used_points: order.usedPoints,
+    used_promo_id: order.usedPromoId ?? null,
+    promo_discount: order.promoDiscount,
+    referred_by: order.referredBy ?? "",
+  });
+  if (!data) throw new Error("Gagal submit pesanan");
+  return {
+    invoice: data.invoice,
+    whatsappUrl: data.whatsappUrl ?? "",
+    status: data.status ?? "Online Baru",
+  };
 }
 
 export async function getOrders(
   storeId: string,
   phone: string
 ): Promise<OnlineOrder[]> {
-  const supabase = requireSupabase();
   const p = normalizePhoneTo08(phone);
   if (!p) return [];
-  const { data } = await supabase
-    .from("online_orders")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("customer_phone", p)
-    .order("created_at", { ascending: false })
-    .limit(30);
-
-  return (data as OnlineOrder[]) ?? [];
+  const data = await callFn<{ orders: OnlineOrder[] }>("get_orders_by_phone", {
+    store_id: storeId,
+    phone: p,
+  });
+  return data?.orders ?? [];
 }
 
 export async function cancelOrder(
@@ -453,18 +405,14 @@ export async function cancelOrder(
   orderId: number,
   phone: string
 ): Promise<boolean> {
-  const supabase = requireSupabase();
   const p = normalizePhoneTo08(phone);
   if (!p) return false;
-  const { error } = await supabase
-    .from("online_orders")
-    .update({ status: "Dibatalkan" })
-    .eq("id", orderId)
-    .eq("store_id", storeId)
-    .eq("customer_phone", p)
-    .eq("status", "Online Baru");
-
-  return !error;
+  const data = await callFn<{ ok: boolean }>("cancel_order_by_phone", {
+    store_id: storeId,
+    id: orderId,
+    phone: p,
+  });
+  return data?.ok ?? false;
 }
 
 // ─── Formatting ─────────────────────────────────────────────────────

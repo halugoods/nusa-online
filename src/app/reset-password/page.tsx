@@ -1,43 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 
-// Halaman reset password (v2.2.57+112) — dibuka dari email Supabase Auth.
-// Supabase mengarahkan user ke /reset-password#access_token=... setelah
-// resetPasswordForEmail. Di sini user memasukkan password baru (2x), lalu
-// updateUser dipanggil dengan session dari hash token.
+// v2.2.57+130 (Milestone D): reset password pindah ke worker Cloudflare.
+// Alur: app minta reset → worker generate token, email link
+// https://nusa-online.vercel.app/reset-password?token=... → di sini user
+// masukkan password baru → POST /api/auth/reset_confirm {token, newPassword}.
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 export default function ResetPasswordPage() {
-  const [accessToken, setAccessToken] = useState("");
+  const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
-  const [supabase, setSupabase] = useState<any>(null);
 
   useEffect(() => {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      setError("Supabase tidak dikonfigurasi.");
-      return;
-    }
-    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    setSupabase(client);
-
-    // Token ada di URL hash (#access_token=...&type=recovery)
-    const hash = window.location.hash;
-    const m = hash.match(/access_token=([^&]+)/);
-    if (m) {
-      setAccessToken(m[1]);
+    // Token ada di query (?token=...) — worker kirim link dengan ?token=.
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("token") ?? "";
+    if (t) {
+      setToken(t);
     } else {
-      const params = new URLSearchParams(window.location.search);
-      const t = params.get("access_token") ?? "";
-      setAccessToken(t);
-      if (!t) setError("Link reset password tidak valid atau sudah kedaluwarsa.");
+      // Fallback: hash (#token=...) untuk kompatibilitas link lama.
+      const hash = window.location.hash;
+      const m = hash.match(/token=([^&]+)/);
+      if (m) {
+        setToken(m[1]);
+      } else {
+        setError("Link reset password tidak valid atau sudah kedaluwarsa.");
+      }
     }
   }, []);
 
@@ -50,7 +45,7 @@ export default function ResetPasswordPage() {
       setError("Password dan ulangi password tidak sama.");
       return;
     }
-    if (!supabase || !accessToken) {
+    if (!token) {
       setError("Link reset password tidak valid. Minta link baru dari aplikasi.");
       return;
     }
@@ -58,15 +53,13 @@ export default function ResetPasswordPage() {
     setLoading(true);
     setError("");
     try {
-      // Set session dari recovery token, lalu update password.
-      await supabase.auth.setSession({
-        access_token: accessToken,
-        refresh_token: "",
+      const res = await fetch(`${WORKER_URL}/api/auth/reset_confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token, newPassword: password }),
       });
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      });
-      if (updateError) throw updateError;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal mengubah password.");
       setDone(true);
       // Kembali ke aplikasi via deep link (bila user datang dari HP).
       setTimeout(() => {
@@ -119,45 +112,33 @@ export default function ResetPasswordPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-subtle bg-surface text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                 placeholder="Minimal 6 karakter"
-                className="w-full px-4 py-3 rounded-lg bg-input-fill border border-input-border text-gray-900 placeholder:text-text-tertiary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
             <div>
               <label className="block text-text-secondary text-xs font-medium mb-1.5">
-                Ulangi Password Baru
+                Ulangi Password
               </label>
               <input
                 type="password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
-                placeholder="Ketik ulang password"
-                className="w-full px-4 py-3 rounded-lg bg-input-fill border border-input-border text-gray-900 placeholder:text-text-tertiary text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                className="w-full px-3 py-2.5 rounded-lg border border-subtle bg-surface text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
+                placeholder="Masukkan kembali password"
               />
             </div>
-
             {error && (
-              <div className="bg-error-soft border border-error/20 rounded-lg p-3">
-                <p className="text-error-text text-sm">{error}</p>
+              <div className="text-danger text-sm bg-danger-soft rounded-lg px-3 py-2">
+                {error}
               </div>
             )}
-
             <button
               onClick={handleSubmit}
               disabled={loading}
-              className="w-full py-3.5 rounded-lg font-semibold text-white transition-all duration-200 hover:opacity-90 shadow-bar disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none bg-primary"
+              className="w-full py-2.5 rounded-lg bg-primary text-white font-medium text-sm hover:bg-primary-dark transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Menyimpan…
-                </span>
-              ) : (
-                "Simpan Password"
-              )}
+              {loading ? "Menyimpan…" : "Simpan Password Baru"}
             </button>
           </div>
         )}

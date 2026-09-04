@@ -1,19 +1,17 @@
 "use client";
 
 // ─── Sheets admin manager — dashboard nusa-online (Spreadsheet tab) ──────
-// Edge function `sheets-admin` (OAuth Company Account):
-//   GET  /                        → status koneksi (enabled? owner email?) — aman anonim
-//   POST {action:"oauth_status"}    → info akun Google terhubung (admin)
-//   POST {action:"oauth_callback",code} → tukar OAuth code → refresh token (admin)
-//   POST {action:"test_credential"} → test koneksi Google (admin)
-//   POST {action:"list_users"}      → registry semua user + link (admin)
+// Worker `sheets-admin` (OAuth Company Account):
+//   GET  /api/sheets-admin/status          → status koneksi (enabled? owner email?) — publik
+//   POST /api/sheets-admin/oauth_status      → info akun Google terhubung (admin)
+//   POST /api/sheets-admin/oauth_callback    → tukar OAuth code → refresh token (admin)
+//   POST /api/sheets-admin/test_credential   → test koneksi Google (admin)
+//   POST /api/sheets-admin/list_users        → registry semua user + link (admin)
 //
-// Alur: admin login Google sekali (paste code) → refresh token disimpan di
-// sheets_settings → server buat & isi spreadsheet atas nama company account.
-// App user tidak perlu login Google.
+// Auth: x-admin-key header (worker cek terhadap NUSA_ADMIN_KEY).
 
-const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/sheets-admin`;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 export interface SheetsRegistryUser {
   id: string;
@@ -40,12 +38,7 @@ export async function fetchSheetsStatus(): Promise<{
   owner_email: string | null;
 }> {
   try {
-    const res = await fetch(EDGE_FUNCTION_URL, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
+    const res = await fetch(`${WORKER_URL}/api/sheets-admin/status`);
     if (!res.ok) return { enabled: false, owner_email: null };
     const data = (await res.json()) as { enabled?: boolean; owner_email?: string | null };
     return { enabled: data.enabled === true, owner_email: data.owner_email ?? null };
@@ -59,15 +52,13 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
     ? localStorage.getItem("nusa_admin_key")
     : null;
   if (!adminKey) throw new Error("Not authenticated");
-  const res = await fetch(EDGE_FUNCTION_URL, {
+  const res = await fetch(`${WORKER_URL}/api/sheets-admin/${action}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       "x-admin-key": adminKey,
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -83,7 +74,6 @@ export async function fetchOAuthStatus(): Promise<SheetsOAuthStatus> {
   };
 }
 
-/** Ambil URL consent Google (paste-code flow). Admin klik → login Google → dapat code. */
 export async function fetchOAuthConsentUrl(): Promise<string> {
   const data = await postAction("oauth_consent_url");
   if (!data.url) throw new Error(data.error ?? "Gagal ambil URL login Google");
@@ -144,7 +134,6 @@ export async function listSheetsAccounts(): Promise<SheetsAccountsPayload> {
   return (await postAction("list_accounts")) as SheetsAccountsPayload;
 }
 
-/** OAuth code → akun Google TAMBAHAN (refresh token tersendiri di sheets_accounts). */
 export async function submitOAuthCodeAccount(
   code: string,
   label?: string,

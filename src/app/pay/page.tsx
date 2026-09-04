@@ -49,8 +49,9 @@ const PACKAGES: Package[] = [
   },
 ];
 
-// Supabase URL — hardcoded (same as vercel.json)
-const SUPABASE_URL = "https://sakeuhcbcnueplzlkltm.supabase.co";
+// Worker URL — /api/instanpay/{create|status}
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 const POLL_INTERVAL_MS = 4000;
 const QRIS_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes per InstanPay
@@ -118,13 +119,12 @@ export default function PayPage() {
   useEffect(() => clearPoll, []);
 
   async function createPayment(googleId: string) {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/instanpay`, {
+    const res = await fetch(`${WORKER_URL}/api/instanpay/create`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        action: "create",
         product: app!.id,
         package: selectedPackage,
         google_id: googleId,
@@ -135,10 +135,10 @@ export default function PayPage() {
   }
 
   async function pollStatus(txId: string) {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/instanpay`, {
+    const res = await fetch(`${WORKER_URL}/api/instanpay/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "status", transactionId: txId }),
+      body: JSON.stringify({ transactionId: txId }),
     });
     return res.json();
   }

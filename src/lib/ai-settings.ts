@@ -1,13 +1,13 @@
 "use client";
 
 // ─── AI Settings manager — dashboard nusa-online (Area H) ─────────────
-// Edge function `ai-assistant`:
-//   GET  /settings?owner=<owner>  → ambil config AI
-//   POST {action:"save_settings"} → simpan provider config (admin)
-//   POST {action:"test"}          → test koneksi provider (admin)
+// Worker `ai-assistant`:
+//   GET  /api/ai-assistant/settings?owner=<owner>  → ambil config AI (publik)
+//   POST /api/ai-assistant/save_settings            → simpan provider config (admin)
+//   POST /api/ai-assistant/test                     → test koneksi provider (admin)
 
-const EDGE_FUNCTION_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/ai-assistant`;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const WORKER_URL =
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
 
 export interface AiSettingsRecord {
   base_url: string;
@@ -20,15 +20,10 @@ export interface AiSettingsRecord {
 
 export async function fetchAiSettings(owner?: string): Promise<AiSettingsRecord | null> {
   const url = owner
-    ? `${EDGE_FUNCTION_URL}/settings?owner=${encodeURIComponent(owner)}`
-    : `${EDGE_FUNCTION_URL}/settings`;
+    ? `${WORKER_URL}/api/ai-assistant/settings?owner=${encodeURIComponent(owner)}`
+    : `${WORKER_URL}/api/ai-assistant/settings`;
   try {
-    const res = await fetch(url, {
-      headers: {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-      },
-    });
+    const res = await fetch(url);
     if (!res.ok) return null;
     return (await res.json()) as AiSettingsRecord;
   } catch {
@@ -40,15 +35,13 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
   const adminKey = typeof window !== "undefined"
     ? localStorage.getItem("nusa_admin_key")
     : null;
-  const res = await fetch(EDGE_FUNCTION_URL, {
+  const res = await fetch(`${WORKER_URL}/api/ai-assistant/${action}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "apikey": SUPABASE_ANON_KEY,
-      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       "x-admin-key": adminKey ?? "",
     },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -56,7 +49,7 @@ async function postAction(action: string, payload: Record<string, unknown> = {})
 }
 
 // Simpan provider AI (upsert ai_settings). `apiKey` bisa dikosongkan untuk
-// memakai key bawaan (OPENROUTER_API_KEY env edge function).
+// memakai key bawaan (OPENROUTER_API_KEY env worker).
 export async function saveAiSettings(opts: {
   owner: string;
   baseUrl: string;
@@ -71,7 +64,6 @@ export async function saveAiSettings(opts: {
   });
 }
 
-// Test koneksi provider dengan config yang sedang di-draft (belum disimpan).
 export interface AiTestResult {
   ok: boolean;
   model?: string;
