@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 // masukkan password baru → POST /api/auth/reset_confirm {token, newPassword}.
 
 const WORKER_URL =
-  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods-indonesia.workers.dev";
 
 export default function ResetPasswordPage() {
   const [token, setToken] = useState("");

@@ -5,7 +5,7 @@
 // Auth: x-admin-key header saja (worker cek terhadap NUSA_ADMIN_KEY).
 
 const WORKER_URL =
-  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods-indonesia.workers.dev";
 
 export type LicenseTier = 'trial' | '1month' | 'lifetime';
 export type LicenseStatus = "Generated" | "Trial" | "Active" | "Cancelled" | "Expired";

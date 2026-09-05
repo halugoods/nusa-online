@@ -51,7 +51,7 @@ const PACKAGES: Package[] = [
 
 // Worker URL — /api/instanpay/{create|status}
 const WORKER_URL =
-  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods-indonesia.workers.dev";
 
 const POLL_INTERVAL_MS = 4000;
 const QRIS_MAX_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes per InstanPay

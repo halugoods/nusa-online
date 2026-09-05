@@ -6,7 +6,7 @@
 // Worker: POST /api/online-store/{action} dengan body JSON 1:1 edge fn lama.
 
 const WORKER_URL =
-  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods.workers.dev";
+  process.env.NEXT_PUBLIC_API_BASE ?? "https://nusa-cloud.halugoods-indonesia.workers.dev";
 
 async function callFn<T>(action: string, body: Record<string, unknown>): Promise<T | null> {
   try {
