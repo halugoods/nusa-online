@@ -50,7 +50,7 @@ import BackupRecoveryTab from "./_components/BackupRecoveryTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds";
+type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds" | "backup";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
