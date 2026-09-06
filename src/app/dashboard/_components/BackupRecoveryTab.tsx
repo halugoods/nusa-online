@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getUserDetail,
   getUserNus1,
+  downloadUserNus1,
   buildFixPromptYaml,
   exportD1,
   type UserDetail,
@@ -117,36 +118,12 @@ export default function BackupRecoveryTab() {
   const downloadNus1 = useCallback(async (email: string) => {
     setDownloading(email);
     try {
-      if (!nus1Map[email]) await fetchNus1(email);
-      const nus1 = nus1Map[email];
-      if (!nus1?.nus1_base64 || !nus1?.nus1_file_name) {
-        // Fetch if not available yet
-        const fresh = await getUserNus1(email);
-        if (fresh.nus1_base64 && fresh.nus1_file_name) {
-          setNus1Map((prev) => ({ ...prev, [email]: fresh }));
-          await downloadBlob(fresh.nus1_base64, fresh.nus1_file_name);
-        }
-      } else {
-        await downloadBlob(nus1.nus1_base64, nus1.nus1_file_name);
-      }
+      await downloadUserNus1(email);
     } catch (e: any) {
       setError(`Download gagal: ${e.message}`);
     } finally {
       setDownloading("");
     }
-  }, [nus1Map, fetchNus1]);
-
-  const downloadBlob = useCallback((base64: string, fileName: string) => {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: "application/octet-stream" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
   }, []);
 
   // ── Export D1 ───────────────────────────────────────────────────────

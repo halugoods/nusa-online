@@ -78,6 +78,26 @@ export async function getUserNus1(email?: string, googleUserId?: string): Promis
   return res.json();
 }
 
+// Download .nus1 as file stream (bypass JSON/base64 limit for large files)
+export async function downloadUserNus1(email?: string, googleUserId?: string): Promise<void> {
+  const res = await fetch(`${WORKER_URL}/api/export/user-nus1-download`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_KEY() },
+    body: JSON.stringify({ email, googleUserId }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const match = disposition.match(/filename="?([^";]+)"?/);
+  const fileName = match?.[1] ?? 'backup.nus1';
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Prompt builder ────────────────────────────────────────────────────
 
 export function buildFixPrompt(user: UserDetail, nus1: UserNus1): string {
