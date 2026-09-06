@@ -19,7 +19,6 @@ const TABS = [
   { id: "ai",        label: "AI",        href: "/dashboard?tab=ai" },
   { id: "sheets",    label: "Google Sheets", href: "/dashboard?tab=sheets" },
   { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
-  { id: "audio",     label: "Audio",     href: "/dashboard/audio" },
 ];
 
 export default function DashboardShell({
@@ -58,7 +57,7 @@ export default function DashboardShell({
   const effectiveActive =
     activeTab
     ?? tabFromQuery
-    ?? (pathname === "/dashboard/audio" ? "audio"
+    ?? (pathname === "/dashboard/audio" ? "sounds"
      : pathname === "/dashboard/sounds" ? "sounds"
      : "overview");
 
