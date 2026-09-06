@@ -19,6 +19,7 @@ const TABS = [
   { id: "ai",        label: "AI",        href: "/dashboard?tab=ai" },
   { id: "sheets",    label: "Google Sheets", href: "/dashboard?tab=sheets" },
   { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
+  { id: "backup",    label: "Backup & Recovery", href: "/dashboard?tab=backup" },
 ];
 
 export default function DashboardShell({
@@ -60,6 +61,7 @@ export default function DashboardShell({
     ?? (pathname === "/dashboard/audio" ? "sounds"
      : pathname === "/dashboard/sounds" ? "sounds"
      : "overview");
+  // Note: backup uses ?tab=backup query param, handled by tabFromQuery above
 
   return (
     <div className="min-h-screen bg-gray-50">

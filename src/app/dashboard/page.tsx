@@ -46,6 +46,7 @@ import DashboardShell from "./_components/DashboardShell";
 import NotifikasiTab from "./_components/NotifikasiTab";
 import AiTab from "./_components/AiTab";
 import SpreadsheetsTab from "./_components/SpreadsheetsTab";
+import BackupRecoveryTab from "./_components/BackupRecoveryTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -185,7 +186,7 @@ function DashboardInner() {
   const view: View =
     tabParam === "licenses" || tabParam === "generate" ||
     tabParam === "tutorials" || tabParam === "sounds" ||
-    tabParam === "ai" || tabParam === "sheets"
+    tabParam === "ai" || tabParam === "sheets" || tabParam === "backup"
       ? tabParam
       : "overview";
 
@@ -198,6 +199,7 @@ function DashboardInner() {
       {view === "ai" && <AiTab />}
       {view === "sheets" && <SpreadsheetsTab />}
       {view === "sounds" && <NotifikasiTab />}
+      {view === "backup" && <BackupRecoveryTab />}
     </DashboardShell>
   );
 }
