@@ -23,9 +23,11 @@ export const PRODUCTS: { id: string; name: string }[] = [
 
 export const TIERS: { id: LicenseTier; label: string; desc: string }[] = [
   { id: "trial", label: "Trial 3 Hari", desc: "Gratis, 3 hari" },
-  { id: "1month", label: "Bulanan (Rp 49K)", desc: "1 bulan penuh" },
-  { id: "lifetime", label: "Lifetime (Rp 249K)", desc: "Selamanya" },
+  { id: "1month", label: "Bulanan", desc: "1 bulan penuh (Pro Rp 99K / Lite Rp 49K)" },
+  { id: "lifetime", label: "Lifetime", desc: "Selamanya (Pro Rp 499K / Lite Rp 249K)" },
 ];
+
+export type LicenseMode = "pro" | "lite";
 
 export interface LicenseRecord {
   id: string;
@@ -163,7 +165,8 @@ export async function generateKeys(
   sendEmail?: boolean,
   product?: string,
   tier?: LicenseTier,
-): Promise<{ ok: boolean; count: number; keys: string[]; product?: string; tier?: string; expires_at?: string; email_sent?: boolean; email_error?: string }> {
+  mode?: LicenseMode,
+): Promise<{ ok: boolean; count: number; keys: string[]; product?: string; tier?: string; mode?: string; expires_at?: string; email_sent?: boolean; email_error?: string }> {
   return call("generate", {
     count,
     owner_email: ownerEmail ?? null,
@@ -171,6 +174,7 @@ export async function generateKeys(
     send_email: sendEmail ?? false,
     product: product ?? undefined,
     tier: tier ?? undefined,
+    mode: mode ?? "pro",
   });
 }
 

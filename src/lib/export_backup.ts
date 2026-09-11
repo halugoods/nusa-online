@@ -154,6 +154,61 @@ export function buildFixPrompt(user: UserDetail, nus1: UserNus1): string {
   return lines.join("\n");
 }
 
+// ── Self-Service Backup Recovery ──────────────────────────────────────
+
+export interface ParseNus1Result {
+  ok: boolean;
+  parsed: boolean;
+  entries: string[];
+  has_db: boolean;
+  db_size_bytes: number;
+  user_found: boolean;
+  google_user_id: string | null;
+  license_key: string | null;
+  license_status: string | null;
+  product: string;
+}
+
+export interface RestoreResult {
+  ok: boolean;
+  restored: boolean;
+  google_user_id: string;
+  product: string;
+  backup_path: string;
+  backup_size_bytes: number;
+  sqlite_size_bytes: number;
+  new_key: string | null;
+  message: string;
+}
+
+/** Parse .nus1 file & validate — GET preview sebelum restore */
+export async function parseNus1(nus1Base64: string, email?: string, product = "nusa-kasir"): Promise<ParseNus1Result> {
+  const res = await fetch(`${WORKER_URL}/api/backup-recovery/parse-nus1`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_KEY() },
+    body: JSON.stringify({ email, product, nus1_base64: nus1Base64 }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/** Pro restore: parse → encrypt → upload to R2 → generate key (optional) */
+export async function restoreBackup(nus1Base64: string, email: string, product = "nusa-kasir", generateKey = false, mode = "pro"): Promise<RestoreResult> {
+  const res = await fetch(`${WORKER_URL}/api/backup-recovery/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-admin-key": ADMIN_KEY() },
+    body: JSON.stringify({ email, product, nus1_base64: nus1Base64, generate_key: generateKey, mode }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
 export function buildFixPromptYaml(user: UserDetail, nus1: UserNus1): string {
   // YAML-friendly format untuk user (copy-paste ke WA)
   const lines: string[] = [];

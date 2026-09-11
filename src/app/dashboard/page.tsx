@@ -22,6 +22,7 @@ import {
   type LicenseDetail,
   type LicenseStats,
   type LicenseTier,
+  type LicenseMode,
   type LicenseStatus,
   type ActivationRecord,
   type MinVersionRecord,
@@ -47,10 +48,13 @@ import NotifikasiTab from "./_components/NotifikasiTab";
 import AiTab from "./_components/AiTab";
 import SpreadsheetsTab from "./_components/SpreadsheetsTab";
 import BackupRecoveryTab from "./_components/BackupRecoveryTab";
+import DiagnosticTab from "./_components/DiagnosticTab";
+import SupportCenterTab from "./_components/SupportCenterTab";
+import NotificationsTab from "./_components/NotificationsTab";
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds" | "backup";
+type View = "overview" | "licenses" | "generate" | "tutorials" | "ai" | "sheets" | "sounds" | "backup" | "diagnostic" | "support" | "notifications";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -186,7 +190,8 @@ function DashboardInner() {
   const view: View =
     tabParam === "licenses" || tabParam === "generate" ||
     tabParam === "tutorials" || tabParam === "sounds" ||
-    tabParam === "ai" || tabParam === "sheets" || tabParam === "backup"
+    tabParam === "ai" || tabParam === "sheets" || tabParam === "backup" ||
+    tabParam === "diagnostic" || tabParam === "support" || tabParam === "notifications"
       ? tabParam
       : "overview";
 
@@ -200,6 +205,9 @@ function DashboardInner() {
       {view === "sheets" && <SpreadsheetsTab />}
       {view === "sounds" && <NotifikasiTab />}
       {view === "backup" && <BackupRecoveryTab />}
+      {view === "diagnostic" && <DiagnosticTab />}
+      {view === "support" && <SupportCenterTab />}
+      {view === "notifications" && <NotificationsTab />}
     </DashboardShell>
   );
 }
@@ -800,6 +808,7 @@ function GenerateTab() {
   const [sendEmail, setSendEmail] = useState(false);
   const [product, setProduct] = useState("nusa-kelontong");
   const [tier, setTier] = useState<LicenseTier>("lifetime");
+  const [mode, setMode] = useState<"pro" | "lite">("pro");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ count: number; keys: string[]; product?: string; tier?: string; expires_at?: string; email_sent?: boolean; email_error?: string } | null>(null);
   const [error, setError] = useState("");
@@ -820,7 +829,7 @@ function GenerateTab() {
     setResult(null);
     setActiveMessageIndex(null);
     try {
-      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail, product, tier);
+      const res = await generateKeys(count, ownerEmail || undefined, buyerName || undefined, sendEmail && !!ownerEmail, product, tier, mode);
       setResult(res);
       // Auto-buka pesan key pertama setelah generate berhasil
       if (res.keys?.length) setActiveMessageIndex(0);
@@ -916,6 +925,21 @@ function GenerateTab() {
                 {TIERS.map((t) => (
                   <option key={t.id} value={t.id}>{t.label} — {t.desc}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Mode */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Mode Aplikasi
+              </label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as "pro" | "lite")}
+                className="w-full px-4 py-2.5 border border-input-border rounded-xl text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none bg-white"
+              >
+                <option value="pro">Pro — AI, Cabang, Spreadsheet, Toko Online</option>
+                <option value="lite">Lite — Tanpa AI/Cabang/Online/Sync</option>
               </select>
             </div>
 

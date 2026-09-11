@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getUserDetail,
   getUserNus1,
   downloadUserNus1,
   buildFixPromptYaml,
   exportD1,
+  parseNus1,
+  restoreBackup,
   type UserDetail,
   type UserNus1,
 } from "@/lib/export_backup";
+import BackupViewer from "@/components/backup-viewer/BackupViewer";
 
 interface UserRow {
   email: string;
@@ -188,6 +191,23 @@ export default function BackupRecoveryTab() {
       </div>
       {d1Status && <p className="text-xs text-gray-600">{d1Status}</p>}
 
+      {/* ── Self-Service Restore ───────────────────────────────────── */}
+      <SelfServiceRestore />
+
+      {/* ── Backup File Viewer (Spreadsheet + Image Tooltip) ──────── */}
+      <div className="mt-8">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold text-gray-800">
+            Spreadsheet Viewer
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Upload file .nus1 untuk lihat data dalam bentuk spreadsheet —
+            kolom gambar bisa di-hover untuk preview.
+          </p>
+        </div>
+        <BackupViewer />
+      </div>
+
       {/* ── Search ─────────────────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-100 p-4">
         <input
@@ -298,6 +318,185 @@ export default function BackupRecoveryTab() {
           </pre>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Self-Service Restore ──────────────────────────────────────────────
+// Upload .nus1 → parse → encrypt → upload ke R2 → generate key (optional)
+
+const PRODUCTS = [
+  { id: "nusa-kelontong", name: "Kelontong" },
+  { id: "nusa-fnb", name: "F&B" },
+  { id: "nusa-laundry", name: "Laundry" },
+  { id: "nusa-bengkel", name: "Bengkel" },
+  { id: "nusa-salon", name: "Salon" },
+  { id: "nusa-apotek", name: "Apotek" },
+  { id: "nusa-fotocopy", name: "Fotocopy" },
+  { id: "nusa-servis", name: "Servis" },
+];
+
+function SelfServiceRestore() {
+  const [email, setEmail] = useState("");
+  const [product, setProduct] = useState("nusa-kelontong");
+  const [file, setFile] = useState<File | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [parseResult, setParseResult] = useState<{ entries: string[]; has_db: boolean; db_size_bytes: number; user_found: boolean; google_user_id: string | null; license_key: string | null; license_status: string | null } | null>(null);
+  const [mode, setMode] = useState<"pro" | "lite">("pro");
+  const [generateKey, setGenerateKey] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setFile(f);
+    setFileName(f.name);
+    setParseResult(null);
+    setError("");
+    setSuccess("");
+
+    // Parse locally
+    try {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      const base64 = btoa(String.fromCharCode(...buf));
+      const res = await parseNus1(base64, email || undefined, product);
+      setParseResult(res);
+    } catch (err: any) {
+      setError(err.message ?? "Gagal parse file");
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!file || !email) return;
+    setLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      const base64 = btoa(String.fromCharCode(...buf));
+      const res = await restoreBackup(base64, email, product, generateKey, mode);
+      setSuccess(res.message ?? "Restore berhasil!");
+    } catch (err: any) {
+      setError(err.message ?? "Gagal restore");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900">Self-Service Restore</h3>
+        <p className="text-xs text-gray-500 mt-1">
+          Upload file .nus1 user → otomatis encrypt & upload ke cloud. User bisa login & restore data sendiri.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Email */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Email User</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="user@gmail.com"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
+          />
+        </div>
+
+        {/* Product */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Varian</label>
+          <select
+            value={product}
+            onChange={(e) => setProduct(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
+          >
+            {PRODUCTS.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Mode */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Mode</label>
+          <select
+            value={mode}
+            onChange={(e) => setMode(e.target.value as "pro" | "lite")}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-primary"
+          >
+            <option value="pro">Pro — AI, Cabang, Spreadsheet, Toko Online</option>
+            <option value="lite">Lite — Tanpa AI/Cabang/Online/Sync</option>
+          </select>
+        </div>
+
+        {/* File */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">File .nus1</label>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".nus1,.sqlite,.db"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="w-full px-3 py-2 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-primary hover:text-primary"
+          >
+            {fileName || "Pilih file..."}
+          </button>
+        </div>
+      </div>
+
+      {/* Parse Result */}
+      {parseResult && (
+        <div className={`rounded-lg p-3 text-xs space-y-1 ${parseResult.user_found && parseResult.has_db ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-800"}`}>
+          <div><strong>File:</strong> {parseResult.entries.join(", ")} ({parseResult.db_size_bytes} bytes)</div>
+          <div><strong>User ditemukan:</strong> {parseResult.user_found ? "Ya" : "Tidak"}</div>
+          {parseResult.user_found && (
+            <>
+              <div><strong>Google UID:</strong> {parseResult.google_user_id}</div>
+              <div><strong>License:</strong> {parseResult.license_key} ({parseResult.license_status})</div>
+            </>
+          )}
+          {!parseResult.has_db && (
+            <div className="text-red-700"><strong>PERINGATAN:</strong> File tidak mengandung nusa_kasir.sqlite!</div>
+          )}
+        </div>
+      )}
+
+      {/* Generate Key Toggle */}
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="genKey"
+          checked={generateKey}
+          onChange={(e) => setGenerateKey(e.target.checked)}
+          className="rounded border-gray-300"
+        />
+        <label htmlFor="genKey" className="text-xs text-gray-600">
+          Generate key baru otomatis (untuk user yg kehilangan key)
+        </label>
+      </div>
+
+      {/* Error / Success */}
+      {error && <p className="text-xs text-red-600">{error}</p>}
+      {success && <p className="text-xs text-green-600">{success}</p>}
+
+      {/* Action */}
+      <button
+        onClick={handleRestore}
+        disabled={!file || !email || loading || !parseResult?.has_db}
+        className="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {loading ? "Memproses..." : "Restore Backup"}
+      </button>
     </div>
   );
 }

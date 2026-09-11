@@ -125,9 +125,9 @@ const tiers = [
     name: "Bulanan",
     price: "Rp 49K",
     period: "1 bulan",
-    desc: "Pas untuk kebutuhan jangka pendek.",
+    desc: "Pas untuk kebutuhan jangka pendek. Pakai selama perlu, kapan pun bisa berhenti.",
     color: "border-blue-400",
-    badge: "FLEKSIBEL",
+    badge: "BULANAN",
     badgeBg: "bg-blue-500",
     btnColor: "bg-blue-500 hover:bg-blue-600",
     shadow: "shadow-blue-500/20",
@@ -313,6 +313,11 @@ export default function Landing() {
             <p className="text-gray-500 text-base md:text-lg leading-relaxed mb-8 max-w-xl mx-auto">
               Pilih aplikasi yang sesuai dengan bisnis Anda. Dari toko kelontong, restoran, laundry, bengkel, sampai salon — semuanya tersedia.
             </p>
+            <p className="text-gray-400 text-sm md:text-base mb-8">
+              <span className="inline-flex items-center gap-1.5 mr-2"><span className="w-2 h-2 rounded-full bg-blue-500"></span>NUSA Pro (Cloud)</span>
+              <span className="text-gray-300">•</span>
+              <span className="inline-flex items-center gap-1.5 ml-2"><span className="w-2 h-2 rounded-full bg-gray-400"></span>NUSA Lite (Offline)</span>
+            </p>
           </div>
 
           {/* App Selector Grid */}
@@ -327,8 +332,13 @@ export default function Landing() {
                     : "border-gray-100 hover:border-gray-300 bg-white hover:shadow-sm"
                 }`}
               >
+                {/* Pro Badge */}
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm">PRO</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-gray-400 to-emerald-500 text-white shadow-sm">LITE</span>
+                </div>
                 <div
-                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  className="w-12 h-12 rounded-xl flex items-center justify-center mt-1"
                   style={{ backgroundColor: `${app.color}15`, color: app.color }}
                 >
                   <span className="w-6 h-6">{app.icon}</span>
@@ -374,6 +384,76 @@ export default function Landing() {
                 <p className="text-xs text-gray-500 leading-relaxed">{f.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── Feature Comparison Table (Pro vs Lite) ─── */}
+      <section className="py-20 md:py-24 bg-gray-50/50">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-14">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">
+              NUSA Pro vs Lite
+            </h2>
+            <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+              Bandingkan fitur antara NUSA Pro (Cloud) dan NUSA Lite (Offline). Pilih yang paling sesuai kebutuhan bisnis Anda.
+            </p>
+          </div>
+
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+              {/* Table Header */}
+              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-100">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Fitur</span>
+                <div className="text-center">
+                  <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm">PRO</span>
+                  <p className="text-xs font-semibold text-gray-700 mt-1">Cloud</p>
+                </div>
+                <div className="text-center">
+                  <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full bg-gradient-to-r from-gray-400 to-emerald-500 text-white shadow-sm">LITE</span>
+                  <p className="text-xs font-semibold text-gray-700 mt-1">Offline</p>
+                </div>
+              </div>
+              {/* Table Rows */}
+              {[
+                { feature: "POS Kasir", pro: true, lite: true },
+                { feature: "Laporan Real-time", pro: true, lite: true },
+                { feature: "Backup Cloud", pro: true, lite: false },
+                { feature: "AI Assistant", pro: true, lite: false },
+                { feature: "Multi Cabang", pro: true, lite: false },
+                { feature: "Toko Online", pro: true, lite: false },
+                { feature: "Spreadsheet Export", pro: true, lite: false },
+                { feature: "Google Sign-In", pro: true, lite: false },
+              ].map((row, i) => (
+                <div key={i} className={`grid grid-cols-3 gap-4 px-6 py-3.5 ${i < 7 ? "border-b border-gray-50" : ""}`}>
+                  <span className="text-sm text-gray-700 font-medium">{row.feature}</span>
+                  <div className="flex justify-center">
+                    {row.pro ? (
+                      <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    )}
+                  </div>
+                  <div className="flex justify-center">
+                    {row.lite ? (
+                      <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {/* Pricing Row */}
+              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-primary-soft border-t border-primary/10">
+                <span className="text-sm text-gray-700 font-bold">Harga Mulai</span>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-primary">Rp 49K</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-sm font-extrabold text-gray-700">Rp 249K</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
