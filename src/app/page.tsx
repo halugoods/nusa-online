@@ -93,8 +93,8 @@ const apps = [
     ),
   },
   {
-    id: "nusa-servicehp", name: "Service HP", color: "#06B6D4", bg: "bg-cyan-500",
-    desc: "Servis handphone & elektronik",
+    id: "nusa-servis", name: "Servis", color: "#06B6D4", bg: "bg-cyan-500",
+    desc: "Servis HP, elektronik & gadget",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <rect x="5" y="2" width="14" height="20" rx="2" ry="2" />
@@ -148,10 +148,97 @@ const tiers = [
   },
 ];
 
+// Pro pricing tiers
+const proTiers = [
+  {
+    id: "pro-trial",
+    name: "Trial",
+    price: "Gratis",
+    period: "3 hari",
+    desc: "Coba semua fitur Pro tanpa risiko.",
+    color: "border-amber-300",
+    badge: "COBA DULU",
+    badgeBg: "bg-amber-400",
+    btnColor: "bg-amber-400 hover:bg-amber-500",
+    shadow: "shadow-amber-400/20",
+    features: ["Semua fitur Pro", "Cloud backup", "AI Assistant", "Support WhatsApp"],
+  },
+  {
+    id: "pro-monthly",
+    name: "Bulanan",
+    price: "Rp 99K",
+    period: "1 bulan",
+    desc: "Cloud-based. Sinkronisasi real-time di semua perangkat.",
+    color: "border-blue-400",
+    badge: "BULANAN",
+    badgeBg: "bg-blue-500",
+    btnColor: "bg-blue-500 hover:bg-blue-600",
+    shadow: "shadow-blue-500/20",
+    features: ["Semua fitur Trial", "Cloud sync real-time", "AI Assistant", "Multi cabang"],
+  },
+  {
+    id: "pro-lifetime",
+    name: "Lifetime",
+    price: "Rp 499K",
+    period: "selamanya",
+    desc: "Bayar sekali, pakai selamanya. Termasuk update gratis.",
+    color: "border-primary",
+    badge: "BEST VALUE",
+    badgeBg: "bg-gradient-to-r from-primary to-amber-500",
+    btnColor: "bg-primary hover:bg-primary-dark",
+    shadow: "shadow-primary/30",
+    features: ["Semua fitur Bulanan", "Multi perangkat (Google Sign-In)", "Update gratis selamanya", "Priority support"],
+  },
+];
+
+// Lite pricing tiers
+const liteTiers = [
+  {
+    id: "lite-trial",
+    name: "Trial",
+    price: "Gratis",
+    period: "3 hari",
+    desc: "Coba semua fitur Lite tanpa risiko.",
+    color: "border-amber-300",
+    badge: "COBA DULU",
+    badgeBg: "bg-amber-400",
+    btnColor: "bg-amber-400 hover:bg-amber-500",
+    shadow: "shadow-amber-400/20",
+    features: ["Semua fitur Lite", "Offline-first", "Local backup", "Support WhatsApp"],
+  },
+  {
+    id: "lite-monthly",
+    name: "Bulanan",
+    price: "Rp 49K",
+    period: "1 bulan",
+    desc: "Offline-first. Pakai tanpa internet setelah aktivasi.",
+    color: "border-emerald-400",
+    badge: "BULANAN",
+    badgeBg: "bg-emerald-500",
+    btnColor: "bg-emerald-500 hover:bg-emerald-600",
+    shadow: "shadow-emerald-500/20",
+    features: ["Semua fitur Trial", "Tanpa internet", "Aktivasi email + key", "Local storage"],
+  },
+  {
+    id: "lite-lifetime",
+    name: "Lifetime",
+    price: "Rp 249K",
+    period: "selamanya",
+    desc: "Bayar sekali, pakai selamanya. Tanpa biaya bulanan.",
+    color: "border-gray-400",
+    badge: "HEMAT 60%",
+    badgeBg: "bg-gray-600",
+    btnColor: "bg-gray-700 hover:bg-gray-800",
+    shadow: "shadow-gray-500/30",
+    features: ["Semua fitur Bulanan", "Tanpa biaya bulanan", "Update gratis selamanya", "Email + license key"],
+  },
+];
+
 const features = [
   {
     title: "Multi Kasir",
     desc: "Role-based access. Owner, Manager, Kasir, Gudang, Finance.",
+    badge: "all",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
@@ -164,6 +251,7 @@ const features = [
   {
     title: "Laporan Real-time",
     desc: "Pantau penjualan, stok, keuangan. Export ke spreadsheet.",
+    badge: "all",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <line x1="18" y1="20" x2="18" y2="10" />
@@ -173,8 +261,9 @@ const features = [
     ),
   },
   {
-    title: "Toko Online Gratis",
+    title: "Toko Online",
     desc: "Halaman toko online. Pelanggan pesan langsung via WhatsApp.",
+    badge: "pro",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -186,6 +275,7 @@ const features = [
   {
     title: "Backup Cloud",
     desc: "Data aman di cloud. Ganti HP tinggal restore.",
+    badge: "pro",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M17.5 19H9a7 7 0 116.71-9h1.79a4.5 4.5 0 110 9z" />
@@ -197,6 +287,7 @@ const features = [
   {
     title: "Promo & Diskon",
     desc: "Diskon %, nominal, buy X get Y. Barcode scan produk.",
+    badge: "all",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z" />
@@ -207,6 +298,7 @@ const features = [
   {
     title: "QRIS & Barcode",
     desc: "Terima pembayaran QRIS. Scan barcode produk.",
+    badge: "all",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="7" height="7" />
@@ -224,6 +316,7 @@ const features = [
   {
     title: "Pelanggan & Supplier",
     desc: "Database pelanggan, supplier, hutang-piutang.",
+    badge: "all",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
@@ -235,6 +328,7 @@ const features = [
   {
     title: "AI Assistant",
     desc: "Tanya soal stok, penjualan, rekomendasi langsung di aplikasi.",
+    badge: "pro",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
@@ -244,17 +338,17 @@ const features = [
 ];
 
 const steps = [
-  { step: "1", title: "Pilih & Bayar", desc: "Pilih aplikasi & paket, hubungi via WhatsApp, lakukan pembayaran. Key aktivasi dikirim ke email Anda dalam hitungan menit." },
-  { step: "2", title: "Download & Aktivasi", desc: "Download aplikasi NUSA pilihan Anda dari link yang kami kirim, login dengan akun Google, dan masukkan key aktivasi." },
+  { step: "1", title: "Pilih & Bayar", desc: "Pilih aplikasi & paket (Pro atau Lite), hubungi via WhatsApp, lakukan pembayaran. Key aktivasi dikirim ke email Anda dalam hitungan menit." },
+  { step: "2", title: "Download & Aktivasi", desc: "Download aplikasi NUSA pilihan Anda dari link yang kami kirim. Pro: login dengan akun Google. Lite: masukkan email + license key (tanpa Google)." },
   { step: "3", title: "Setup & Mulai Jualan", desc: "Isi data bisnis, tambahkan produk atau layanan, dan langsung mulai mencatat transaksi pertama Anda." },
 ];
 
 const faqs = [
-  { q: "Apa itu NUSA?", a: "NUSA adalah aplikasi Point of Sale (POS) untuk berbagai jenis bisnis di Indonesia — dari toko kelontong, F&B, laundry, bengkel, salon, apotek, fotocopy, sampai service HP. Pilih aplikasi yang sesuai dengan bisnis Anda, bayar lisensinya, dan langsung mulai jualan." },
-  { q: "Berapa harganya?", a: "3 pilihan: Trial Gratis 3 hari (semua fitur), Bulanan Rp 49.000/bulan, atau Lifetime Rp 249.000 sekali bayar (hemat 60% dari harga normal). Satu lisensi bisa dipakai di beberapa perangkat dengan akun Google yang sama." },
-  { q: "Bisa punya lisensi untuk beberapa aplikasi NUSA?", a: "Ya. Satu akun Google bisa punya lisensi berbeda untuk setiap aplikasi NUSA. Misalnya, Anda bisa punya NUSA Kelontong untuk toko sembako dan NUSA F&B untuk warung makan — semuanya dengan akun Google yang sama." },
-  { q: "Ada trial gratisnya?", a: "Ada. Coba gratis 3 hari full fitur. Kalau cocok, tinggal beli lisensi. Kalau tidak cocok, tidak perlu bayar apa-apa." },
-  { q: "Apakah butuh internet?", a: "Aplikasi bisa dipakai offline (tanpa internet) untuk transaksi harian. Internet hanya diperlukan saat aktivasi pertama dan sinkronisasi backup cloud." },
+  { q: "Apa itu NUSA?", a: "NUSA adalah aplikasi Point of Sale (POS) untuk berbagai jenis bisnis di Indonesia — dari toko kelontong, F&B, laundry, bengkel, salon, apotek, fotocopy, sampai servis HP. Pilih aplikasi yang sesuai dengan bisnis Anda, bayar lisensinya, dan langsung mulai jualan." },
+  { q: "Berapa harganya?", a: "Tersedia 2 versi: NUSA Pro (Cloud) dengan Google Sign-In — Bulanan Rp 99K/bulan atau Lifetime Rp 499K. NUSA Lite (Offline) tanpa Google — Bulanan Rp 49K/bulan atau Lifetime Rp 249K. Keduanya ada Trial Gratis 3 hari. Pro termasuk AI Assistant, backup cloud, toko online & multi cabang." },
+  { q: "Bisa punya lisensi untuk beberapa aplikasi NUSA?", a: "Ya. Satu akun Google (Pro) atau email (Lite) bisa punya lisensi berbeda untuk setiap aplikasi NUSA. Misalnya, Anda bisa punya NUSA Kelontong untuk toko sembako dan NUSA F&B untuk warung makan — semuanya dengan akun yang sama." },
+  { q: "Ada trial gratisnya?", a: "Ada. Coba gratis 3 hari full fitur baik untuk Pro maupun Lite. Kalau cocok, tinggal beli lisensi. Kalau tidak cocok, tidak perlu bayar apa-apa." },
+  { q: "Apakah butuh internet?", a: "NUSA Lite: tidak perlu internet setelah aktivasi — semua transaksi berjalan offline. NUSA Pro: perlu internet untuk sinkronisasi cloud, backup otomatis, dan fitur AI Assistant. Transaksi dasar tetap bisa offline dan akan sync saat online kembali." },
   { q: "Bisa dipakai di iPhone?", a: "Saat ini NUSA hanya tersedia di Android. Versi iOS sedang dalam pengembangan." },
 ];
 
@@ -262,61 +356,77 @@ export default function Landing() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [selectedApp, setSelectedApp] = useState<string | null>(null);
   const [selectedTier, setSelectedTier] = useState<string>("lifetime");
+  const [pricingPlan, setPricingPlan] = useState<"pro" | "lite">("pro");
 
   const selectedAppData = apps.find((a) => a.id === selectedApp);
-  const selectedTierData = tiers.find((t) => t.id === selectedTier);
+  const currentTiers = pricingPlan === "pro" ? proTiers : liteTiers;
+  const selectedTierData = currentTiers.find((t) => t.id === selectedTier);
 
   const waBuyMsg = selectedAppData
-    ? `Halo, saya mau beli NUSA ${selectedAppData.name} — paket ${selectedTierData?.name} (${selectedTierData?.price}).`
-    : "Halo, saya mau beli NUSA. Bisa info pembayaran?";
+    ? `Halo, saya mau beli NUSA ${selectedAppData.name} — paket ${selectedTierData?.name} ${pricingPlan === "pro" ? "(Pro Cloud)" : "(Lite Offline)"} (${selectedTierData?.price}).`
+    : `Halo, saya mau beli NUSA ${pricingPlan === "pro" ? "Pro (Cloud)" : "Lite (Offline)"}. Bisa info pembayaran?`;
 
   const waTrialMsg = selectedAppData
-    ? `Halo, saya mau coba trial gratis NUSA ${selectedAppData.name} 3 hari.`
-    : "Halo, saya mau coba trial gratis NUSA.";
+    ? `Halo, saya mau coba trial gratis NUSA ${selectedAppData.name} 3 hari ${pricingPlan === "pro" ? "(Pro)" : "(Lite)"}.`
+    : `Halo, saya mau coba trial gratis NUSA ${pricingPlan === "pro" ? "Pro" : "Lite"} 3 hari.`;
+
+  const handlePlanSwitch = (plan: "pro" | "lite") => {
+    setPricingPlan(plan);
+    // Set appropriate default tier
+    if (plan === "pro") {
+      setSelectedTier("pro-lifetime");
+    } else {
+      setSelectedTier("lite-lifetime");
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-gray-900 font-sans">
+      {/* Subtle background pattern */}
+      <div className="fixed inset-0 opacity-[0.03] pointer-events-none" style={{
+        backgroundImage: `radial-gradient(circle at 1px 1px, #F97316 1px, transparent 0)`,
+        backgroundSize: "32px 32px",
+      }} />
+
+      {/* Gradient orbs */}
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-1/4 right-1/4 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
       {/* ─── Navbar ─── */}
-      <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-gray-100">
+      <nav className="sticky top-0 z-50 bg-slate-900/80 backdrop-blur-xl border-b border-white/10">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <a href="#" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shadow-lg shadow-primary/30">
               <span className="text-white font-extrabold text-sm">N</span>
             </div>
-            <span className="font-extrabold text-gray-900 text-lg tracking-tight">NUSA</span>
+            <span className="font-extrabold text-white text-lg tracking-tight">NUSA</span>
           </a>
-          <a href="#pricing" className="bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 shadow-sm shadow-primary/20">
+          <a href="#pricing" className="bg-primary hover:bg-primary-dark text-white text-sm font-semibold px-4 py-2 rounded-xl transition-all duration-200 shadow-lg shadow-primary/30">
             Beli Sekarang
           </a>
         </div>
       </nav>
 
       {/* ─── Hero ─── */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-primary-soft/60 via-white to-white">
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, #F97316 1px, transparent 0)`,
-          backgroundSize: "24px 24px",
-        }} />
-
+      <section className="relative overflow-hidden">
         <div className="relative max-w-6xl mx-auto px-4 pt-14 md:pt-24 pb-12 md:pb-16">
           <div className="text-center max-w-2xl mx-auto">
-            <div className="inline-flex items-center gap-2 bg-primary-soft text-primary font-semibold text-xs px-3.5 py-1.5 rounded-full mb-6 border border-primary/10">
+            <div className="inline-flex items-center gap-2 bg-primary/10 text-primary font-semibold text-xs px-3.5 py-1.5 rounded-full mb-6 border border-primary/20 backdrop-blur-sm">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
               Aplikasi Kasir untuk Semua Jenis Bisnis
             </div>
 
-            <h1 className="text-3xl md:text-5xl lg:text-[56px] font-extrabold text-gray-900 leading-[1.1] mb-4 tracking-tight">
+            <h1 className="text-3xl md:text-5xl lg:text-[56px] font-extrabold text-white leading-[1.1] mb-4 tracking-tight">
               Satu Ekosistem,{" "}
-              <span className="text-primary">Delapan Aplikasi Kasir</span>
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-amber-400">Delapan Aplikasi Kasir</span>
             </h1>
-            <p className="text-gray-500 text-base md:text-lg leading-relaxed mb-8 max-w-xl mx-auto">
+            <p className="text-gray-400 text-base md:text-lg leading-relaxed mb-8 max-w-xl mx-auto">
               Pilih aplikasi yang sesuai dengan bisnis Anda. Dari toko kelontong, restoran, laundry, bengkel, sampai salon — semuanya tersedia.
             </p>
-            <p className="text-gray-400 text-sm md:text-base mb-8">
+            <p className="text-gray-500 text-sm md:text-base mb-8">
               <span className="inline-flex items-center gap-1.5 mr-2"><span className="w-2 h-2 rounded-full bg-blue-500"></span>NUSA Pro (Cloud)</span>
-              <span className="text-gray-300">•</span>
-              <span className="inline-flex items-center gap-1.5 ml-2"><span className="w-2 h-2 rounded-full bg-gray-400"></span>NUSA Lite (Offline)</span>
+              <span className="text-gray-600">•</span>
+              <span className="inline-flex items-center gap-1.5 ml-2"><span className="w-2 h-2 rounded-full bg-emerald-500"></span>NUSA Lite (Offline)</span>
             </p>
           </div>
 
@@ -325,25 +435,25 @@ export default function Landing() {
             {apps.map((app) => (
               <button
                 key={app.id}
-                onClick={() => { setSelectedApp(app.id); setSelectedTier("lifetime"); document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" }); }}
-                className={`relative group flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-200 ${
+                onClick={() => { setSelectedApp(app.id); setSelectedTier(pricingPlan === "pro" ? "pro-lifetime" : "lite-lifetime"); document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" }); }}
+                className={`relative group flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all duration-200 backdrop-blur-sm ${
                   selectedApp === app.id
-                    ? "border-gray-800 bg-gray-50 shadow-md scale-[1.02]"
-                    : "border-gray-100 hover:border-gray-300 bg-white hover:shadow-sm"
+                    ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-[1.02]"
+                    : "border-white/10 hover:border-white/30 bg-white/5 hover:bg-white/10"
                 }`}
               >
                 {/* Pro Badge */}
                 <div className="absolute -top-2 left-1/2 -translate-x-1/2 flex gap-1 z-10">
                   <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm">PRO</span>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-gray-400 to-emerald-500 text-white shadow-sm">LITE</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm">LITE</span>
                 </div>
                 <div
                   className="w-12 h-12 rounded-xl flex items-center justify-center mt-1"
-                  style={{ backgroundColor: `${app.color}15`, color: app.color }}
+                  style={{ backgroundColor: `${app.color}20`, color: app.color }}
                 >
                   <span className="w-6 h-6">{app.icon}</span>
                 </div>
-                <span className="font-bold text-gray-900 text-sm">{app.name}</span>
+                <span className="font-bold text-white text-sm">{app.name}</span>
                 <span className="text-[11px] text-gray-400 leading-tight text-center">{app.desc}</span>
                 {selectedApp === app.id && (
                   <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-sm">
@@ -355,33 +465,41 @@ export default function Landing() {
           </div>
 
           {selectedApp && (
-            <p className="text-center text-sm text-gray-500 mt-4 animate-fade-in">
-              <strong>NUSA {selectedAppData?.name}</strong> dipilih — scroll ke bawah untuk pilih paket
+            <p className="text-center text-sm text-gray-400 mt-4 animate-fade-in">
+              <strong className="text-white">NUSA {selectedAppData?.name}</strong> dipilih — scroll ke bawah untuk pilih paket
             </p>
           )}
         </div>
       </section>
 
       {/* ─── Features ─── */}
-      <section className="py-20 md:py-24 bg-gray-50/50">
+      <section className="py-20 md:py-24 relative">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">
               Fitur Lengkap di Semua Aplikasi
             </h2>
-            <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
-              Setiap aplikasi NUSA dilengkapi fitur POS modern yang sama lengkapnya — tidak ada yang dikurangi.
+            <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+              Setiap aplikasi NUSA dilengkapi fitur POS modern — tersedia di Pro dan Lite.
             </p>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
             {features.map((f, i) => (
-              <div key={i} className="group bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-lg hover:border-primary/10 hover:-translate-y-0.5 transition-all duration-300">
-                <div className="w-10 h-10 rounded-xl bg-primary-soft flex items-center justify-center mb-3 text-primary">
+              <div key={i} className="group relative bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 p-5 hover:bg-white/10 hover:border-primary/30 hover:-translate-y-1 transition-all duration-300">
+                {/* Badge */}
+                <div className="absolute top-3 right-3">
+                  {f.badge === "all" ? (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">SEMUA</span>
+                  ) : (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">PRO</span>
+                  )}
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center mb-3 text-primary">
                   <span className="w-5 h-5">{f.icon}</span>
                 </div>
-                <h3 className="font-bold text-gray-900 text-sm mb-1.5">{f.title}</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">{f.desc}</p>
+                <h3 className="font-bold text-white text-sm mb-1.5">{f.title}</h3>
+                <p className="text-xs text-gray-400 leading-relaxed">{f.desc}</p>
               </div>
             ))}
           </div>
@@ -389,29 +507,29 @@ export default function Landing() {
       </section>
 
       {/* ─── Feature Comparison Table (Pro vs Lite) ─── */}
-      <section className="py-20 md:py-24 bg-gray-50/50">
+      <section className="py-20 md:py-24 relative">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">
               NUSA Pro vs Lite
             </h2>
-            <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+            <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
               Bandingkan fitur antara NUSA Pro (Cloud) dan NUSA Lite (Offline). Pilih yang paling sesuai kebutuhan bisnis Anda.
             </p>
           </div>
 
           <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
+            <div className="bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10 overflow-hidden">
               {/* Table Header */}
-              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-gray-50 border-b border-gray-100">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Fitur</span>
+              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-white/5 border-b border-white/10">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Fitur</span>
                 <div className="text-center">
                   <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-sm">PRO</span>
-                  <p className="text-xs font-semibold text-gray-700 mt-1">Cloud</p>
+                  <p className="text-xs font-semibold text-gray-300 mt-1">Cloud</p>
                 </div>
                 <div className="text-center">
-                  <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full bg-gradient-to-r from-gray-400 to-emerald-500 text-white shadow-sm">LITE</span>
-                  <p className="text-xs font-semibold text-gray-700 mt-1">Offline</p>
+                  <span className="inline-block text-[10px] font-bold px-2.5 py-1 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-sm">LITE</span>
+                  <p className="text-xs font-semibold text-gray-300 mt-1">Offline</p>
                 </div>
               </div>
               {/* Table Rows */}
@@ -425,32 +543,32 @@ export default function Landing() {
                 { feature: "Spreadsheet Export", pro: true, lite: false },
                 { feature: "Google Sign-In", pro: true, lite: false },
               ].map((row, i) => (
-                <div key={i} className={`grid grid-cols-3 gap-4 px-6 py-3.5 ${i < 7 ? "border-b border-gray-50" : ""}`}>
-                  <span className="text-sm text-gray-700 font-medium">{row.feature}</span>
+                <div key={i} className={`grid grid-cols-3 gap-4 px-6 py-3.5 ${i < 7 ? "border-b border-white/5" : ""}`}>
+                  <span className="text-sm text-gray-300 font-medium">{row.feature}</span>
                   <div className="flex justify-center">
                     {row.pro ? (
-                      <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                     ) : (
-                      <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     )}
                   </div>
                   <div className="flex justify-center">
                     {row.lite ? (
-                      <svg className="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                      <svg className="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                     ) : (
-                      <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      <svg className="w-5 h-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     )}
                   </div>
                 </div>
               ))}
               {/* Pricing Row */}
-              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-primary-soft border-t border-primary/10">
-                <span className="text-sm text-gray-700 font-bold">Harga Mulai</span>
+              <div className="grid grid-cols-3 gap-4 px-6 py-4 bg-primary/10 border-t border-primary/20">
+                <span className="text-sm text-gray-200 font-bold">Harga Mulai</span>
                 <div className="text-center">
-                  <span className="text-sm font-extrabold text-primary">Rp 49K</span>
+                  <span className="text-sm font-extrabold text-primary">Rp 99K</span>
                 </div>
                 <div className="text-center">
-                  <span className="text-sm font-extrabold text-gray-700">Rp 249K</span>
+                  <span className="text-sm font-extrabold text-emerald-400">Rp 49K</span>
                 </div>
               </div>
             </div>
@@ -459,41 +577,67 @@ export default function Landing() {
       </section>
 
       {/* ─── Pricing ─── */}
-      <section id="pricing" className="py-20 md:py-24">
+      <section id="pricing" className="py-20 md:py-24 relative">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">
               {selectedApp ? `Pilih Paket untuk NUSA ${selectedAppData?.name}` : "Pilih Aplikasi & Paket"}
             </h2>
-            <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
+            <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">
               {selectedApp ? "Trial gratis 3 hari, atau langsung beli lisensi." : "Pilih aplikasi di atas, lalu pilih paket yang sesuai."}
             </p>
           </div>
 
+          {/* Pro/Lite Toggle */}
+          <div className="flex justify-center mb-10">
+            <div className="inline-flex items-center bg-white/5 backdrop-blur-sm rounded-2xl p-1.5 border border-white/10">
+              <button
+                onClick={() => handlePlanSwitch("pro")}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                  pricingPlan === "pro"
+                    ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg shadow-blue-500/30"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Pro (Cloud)
+              </button>
+              <button
+                onClick={() => handlePlanSwitch("lite")}
+                className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all duration-300 ${
+                  pricingPlan === "lite"
+                    ? "bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-lg shadow-emerald-500/30"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                Lite (Offline)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-            {tiers.map((tier) => (
+            {currentTiers.map((tier) => (
               <div
                 key={tier.id}
-                className={`relative bg-white rounded-3xl border-2 ${tier.color} p-8 text-center shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer ${
-                  selectedTier === tier.id ? "ring-2 ring-offset-2 ring-gray-800 scale-[1.02]" : ""
+                className={`relative bg-white/5 backdrop-blur-sm rounded-3xl border-2 ${tier.color} p-8 text-center shadow-lg hover:shadow-2xl hover:bg-white/10 transition-all duration-300 cursor-pointer hover:-translate-y-1 ${
+                  selectedTier === tier.id ? "ring-2 ring-offset-2 ring-offset-slate-900 ring-primary scale-[1.02]" : ""
                 }`}
                 onClick={() => setSelectedTier(tier.id)}
               >
-                <div className={`absolute -top-3.5 left-1/2 -translate-x-1/2 ${tier.badgeBg} text-white text-[11px] font-bold px-4 py-1 rounded-full tracking-wide`}>
+                <div className={`absolute -top-3.5 left-1/2 -translate-x-1/2 ${tier.badgeBg} text-white text-[11px] font-bold px-4 py-1 rounded-full tracking-wide shadow-lg`}>
                   {tier.badge}
                 </div>
 
                 <div className="mt-2 mb-5">
-                  <span className="text-4xl font-extrabold text-gray-900 tracking-tight">{tier.price}</span>
+                  <span className="text-4xl font-extrabold text-white tracking-tight">{tier.price}</span>
                   <span className="text-gray-400 text-sm ml-1">/{tier.period}</span>
                 </div>
 
-                <p className="text-xs text-gray-500 mb-6">{tier.desc}</p>
+                <p className="text-xs text-gray-400 mb-6">{tier.desc}</p>
 
-                <ul className="space-y-3 mb-7 text-sm text-gray-600 text-left">
+                <ul className="space-y-3 mb-7 text-sm text-gray-300 text-left">
                   {tier.features.map((item, i) => (
                     <li key={i} className="flex items-start gap-2.5">
-                      <svg className="w-4 h-4 text-accent-green shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <svg className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                       <span className="leading-snug">{item}</span>
@@ -503,45 +647,45 @@ export default function Landing() {
 
                 <a
                   href={`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
-                    tier.id === "trial" ? waTrialMsg : waBuyMsg
+                    tier.id.includes("trial") ? waTrialMsg : waBuyMsg
                   )}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`block w-full ${tier.btnColor} text-white font-bold py-3 rounded-2xl shadow-lg ${tier.shadow} active:scale-[0.98] transition-all text-sm`}
                 >
-                  {tier.id === "trial" ? "Coba Gratis via WhatsApp" : "Beli via WhatsApp"}
+                  {tier.id.includes("trial") ? "Coba Gratis via WhatsApp" : "Beli via WhatsApp"}
                 </a>
 
-                <p className="text-[11px] text-gray-400 mt-3">Transfer bank / QRIS tersedia</p>
+                <p className="text-[11px] text-gray-500 mt-3">Transfer bank / QRIS tersedia</p>
               </div>
             ))}
           </div>
 
           {!selectedApp && (
-            <p className="text-center text-sm text-gray-400 mt-6">Pilih aplikasi dulu di bagian atas, lalu pilih paket di sini</p>
+            <p className="text-center text-sm text-gray-500 mt-6">Pilih aplikasi dulu di bagian atas, lalu pilih paket di sini</p>
           )}
         </div>
       </section>
 
       {/* ─── Cara Aktivasi ─── */}
-      <section className="py-20 md:py-24 bg-gray-50/50">
+      <section className="py-20 md:py-24 relative">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-14">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">Mulai dalam 3 Langkah</h2>
-            <p className="text-gray-500 max-w-lg mx-auto text-sm md:text-base leading-relaxed">Aktivasi NUSA sangat mudah dan cepat — tidak perlu teknisi.</p>
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">Mulai dalam 3 Langkah</h2>
+            <p className="text-gray-400 max-w-lg mx-auto text-sm md:text-base leading-relaxed">Aktivasi NUSA sangat mudah dan cepat — tidak perlu teknisi.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-3xl mx-auto">
             {steps.map((item, i) => (
               <div key={i} className="relative text-center group">
-                <div className="w-14 h-14 mx-auto mb-5 rounded-2xl bg-primary flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform duration-300">
+                <div className="w-14 h-14 mx-auto mb-5 rounded-2xl bg-gradient-to-br from-primary to-amber-500 flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-primary/30 group-hover:scale-110 transition-transform duration-300">
                   {item.step}
                 </div>
-                <h3 className="font-bold text-gray-900 mb-2.5">{item.title}</h3>
-                <p className="text-sm text-gray-500 leading-relaxed">{item.desc}</p>
+                <h3 className="font-bold text-white mb-2.5">{item.title}</h3>
+                <p className="text-sm text-gray-400 leading-relaxed">{item.desc}</p>
                 {i < 2 && (
                   <div className="hidden md:block absolute top-7 left-[65%] w-[70%]">
-                    <svg viewBox="0 0 120 2" className="w-full h-0.5 text-gray-200" stroke="currentColor" strokeWidth="2" strokeDasharray="6 4">
+                    <svg viewBox="0 0 120 2" className="w-full h-0.5 text-gray-600" stroke="currentColor" strokeWidth="2" strokeDasharray="6 4">
                       <line x1="0" y1="1" x2="120" y2="1" />
                     </svg>
                   </div>
@@ -553,28 +697,28 @@ export default function Landing() {
       </section>
 
       {/* ─── FAQ ─── */}
-      <section className="py-20 md:py-24">
+      <section className="py-20 md:py-24 relative">
         <div className="max-w-2xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-2xl md:text-3xl font-extrabold text-gray-900 mb-3 tracking-tight">Pertanyaan Umum</h2>
-            <p className="text-gray-500 text-sm">Ada pertanyaan? Mungkin jawabannya sudah ada di sini.</p>
+            <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">Pertanyaan Umum</h2>
+            <p className="text-gray-400 text-sm">Ada pertanyaan? Mungkin jawabannya sudah ada di sini.</p>
           </div>
 
           <div className="space-y-3">
             {faqs.map((faq, i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-100 overflow-hidden transition-all duration-200">
+              <div key={i} className="bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 overflow-hidden transition-all duration-200 hover:bg-white/10">
                 <button
                   onClick={() => setOpenFaq(openFaq === i ? null : i)}
-                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50/50 transition-colors"
+                  className="w-full flex items-center justify-between px-5 py-4 text-left transition-colors"
                 >
-                  <span className="font-semibold text-gray-900 text-sm pr-4">{faq.q}</span>
+                  <span className="font-semibold text-white text-sm pr-4">{faq.q}</span>
                   <svg className={`w-5 h-5 text-gray-400 shrink-0 transition-transform duration-200 ${openFaq === i ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                   </svg>
                 </button>
                 {openFaq === i && (
                   <div className="px-5 pb-4 animate-fade-in">
-                    <p className="text-sm text-gray-500 leading-relaxed">{faq.a}</p>
+                    <p className="text-sm text-gray-400 leading-relaxed">{faq.a}</p>
                   </div>
                 )}
               </div>
@@ -584,8 +728,13 @@ export default function Landing() {
       </section>
 
       {/* ─── CTA Bottom ─── */}
-      <section className="py-20 bg-gradient-to-br from-primary to-primary-dark">
-        <div className="max-w-2xl mx-auto px-4 text-center">
+      <section className="py-20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary via-primary-dark to-amber-600" />
+        <div className="absolute inset-0 opacity-10" style={{
+          backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
+          backgroundSize: "24px 24px",
+        }} />
+        <div className="max-w-2xl mx-auto px-4 text-center relative">
           <h2 className="text-2xl md:text-3xl font-extrabold text-white mb-3 tracking-tight">
             Siap Mengelola Bisnis Lebih Modern?
           </h2>
@@ -604,7 +753,7 @@ export default function Landing() {
       </section>
 
       {/* ─── Footer ─── */}
-      <footer className="py-10 bg-gray-900">
+      <footer className="py-10 bg-slate-950 border-t border-white/10">
         <div className="max-w-6xl mx-auto px-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
             <div className="flex items-center gap-2.5">
