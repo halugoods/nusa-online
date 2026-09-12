@@ -5,55 +5,45 @@ import {
   fetchAiSettings,
   saveAiSettings,
   testAiConfig,
+  fetchAiModels,
   type AiSettingsRecord,
 } from "@/lib/ai-settings";
 
-// ─── Tab AI — dashboard nusa-online (Area H) ──────────────────────────
-// Atur provider AI (base_url / api_key / model) untuk semua pengguna NUSA.
-// Default: OpenRouter (Gemini Flash Lite) — gratis. Owner "*" = global.
-//
-// Alur:
-//   1. Load config saat ini (GET /settings?owner=*)
-//   2. User edit draft (belum tersimpan)
-//   3. Tombol "Test" → edge fn POST action:test (config draft, tidak disimpan)
-//   4. Tombol "Simpan" → edge fn POST action:save_settings (upsert global)
+// ─── Tab AI — dashboard nusa-online (Custom Provider Hub) ─────────────
+// Full custom config: Base URL + API Key + Test Connection → Auto Fetch Models
+// Mendukung endpoint OpenAI-compatible apa pun (OpenRouter, Groq, DeepSeek, Local AI, dll).
 
-const PRESETS = [
+const QUICK_SUGGESTIONS = [
   {
-    id: "openrouter",
-    label: "OpenRouter (default)",
+    label: "OpenRouter (Default)",
     baseUrl: "https://openrouter.ai/api/v1",
     model: "google/gemini-2.0-flash-lite-001",
-    hint: "Gratis untuk Gemini Flash Lite, pakai key OpenRouter. Kalau API key dikosongkan, pakai key bawaan server.",
   },
   {
-    id: "groq",
-    label: "Groq",
+    label: "Groq Cloud",
     baseUrl: "https://api.groq.com/openai/v1",
     model: "llama-3.3-70b-versatile",
-    hint: "Cepat & gratis (rate-limit harian). Isi API key Groq.",
   },
   {
-    id: "openai",
-    label: "OpenAI",
+    label: "DeepSeek Official",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+  },
+  {
+    label: "OpenAI Direct",
     baseUrl: "https://api.openai.com/v1",
     model: "gpt-4o-mini",
-    hint: "Butuh API key OpenAI (berbayar).",
-  },
-  {
-    id: "custom",
-    label: "Custom (OpenAI-compatible)",
-    baseUrl: "",
-    model: "",
-    hint: "Endpoint apa pun yang kompatibel OpenAI: DeepSeek, Gemini API langsung, Ollama tunnel, dll.",
   },
 ];
 
 export default function AiTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
   const [testResult, setTestResult] = useState<{
     ok: boolean;
     message: string;
@@ -61,13 +51,13 @@ export default function AiTab() {
     reply?: string;
   } | null>(null);
 
-  // Draft form (belum tersimpan)
+  // Form input
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState("");
-  const [preset, setPreset] = useState("openrouter");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
 
-  // Config tersimpan (dari server)
+  // Config tersimpan dari cloud
   const [saved, setSaved] = useState<AiSettingsRecord | null>(null);
 
   async function reload() {
@@ -79,13 +69,7 @@ export default function AiTab() {
         setSaved(cfg);
         setBaseUrl(cfg.base_url || "");
         setModel(cfg.model || "");
-        // apiKey tidak pernah dibaca server — selalu kosong di UI.
         setApiKey("");
-        // Deteksi preset dari base_url.
-        if (cfg.base_url?.includes("openrouter")) setPreset("openrouter");
-        else if (cfg.base_url?.includes("groq")) setPreset("groq");
-        else if (cfg.base_url?.includes("openai.com")) setPreset("openai");
-        else setPreset("custom");
       }
     } catch (e: any) {
       setError(e.message);
@@ -95,46 +79,82 @@ export default function AiTab() {
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function applyPreset(id: string) {
-    setPreset(id);
-    const p = PRESETS.find((x) => x.id === id);
-    if (p) {
-      setBaseUrl(p.baseUrl);
-      setModel(p.model);
-    }
-  }
-
-  async function handleTest() {
-    if (!baseUrl.trim() || !model.trim()) {
-      setTestResult({ ok: false, message: "Isi base_url dan model dulu." });
+  async function handleTestAndFetch() {
+    if (!baseUrl.trim()) {
+      setTestResult({ ok: false, message: "Isi Base URL terlebih dahulu." });
       return;
     }
     setTesting(true);
     setTestResult(null);
+    setError("");
+
     try {
       const res = await testAiConfig({
         owner: "*",
         baseUrl: baseUrl.trim(),
         apiKey: apiKey.trim(),
-        model: model.trim(),
+        model: model.trim() || "gpt-3.5-turbo",
       });
       setTestResult(res);
+
+      if (res.models && res.models.length > 0) {
+        setAvailableModels(res.models);
+        if (!model.trim() || !res.models.includes(model.trim())) {
+          setModel(res.models[0]);
+        }
+      } else {
+        // Fallback coba fetch list models eksplisit
+        const directModels = await fetchAiModels({
+          baseUrl: baseUrl.trim(),
+          apiKey: apiKey.trim(),
+        });
+        if (directModels.length > 0) {
+          setAvailableModels(directModels);
+          if (!model.trim()) setModel(directModels[0]);
+        }
+      }
     } catch (e: any) {
-      setTestResult({ ok: false, message: e.message });
+      setTestResult({ ok: false, message: e.message || "Gagal menghubungi provider AI." });
     }
     setTesting(false);
   }
 
+  async function handleLoadModelListOnly() {
+    if (!baseUrl.trim()) return;
+    setFetchingModels(true);
+    try {
+      const models = await fetchAiModels({
+        baseUrl: baseUrl.trim(),
+        apiKey: apiKey.trim(),
+      });
+      if (models.length > 0) {
+        setAvailableModels(models);
+        if (!model.trim()) setModel(models[0]);
+      } else {
+        setError("Provider tidak mengembalikan daftar model atau endpoint /models tidak diizinkan.");
+      }
+    } catch (e: any) {
+      setError(e.message || "Gagal fetch daftar model.");
+    }
+    setFetchingModels(false);
+  }
+
   async function handleSave() {
-    if (!baseUrl.trim() || !model.trim()) {
-      setError("Isi base_url dan model dulu.");
+    if (!baseUrl.trim()) {
+      setError("Base URL wajib diisi.");
       return;
     }
+    if (!model.trim()) {
+      setError("Model AI wajib diisi atau dipilih.");
+      return;
+    }
+
     setSaving(true);
     setError("");
+    setSaveSuccess("");
+
     try {
       await saveAiSettings({
         owner: "*",
@@ -142,167 +162,269 @@ export default function AiTab() {
         apiKey: apiKey.trim(),
         model: model.trim(),
       });
-      setApiKey(""); // jangan simpan key di state setelah sukses
+      setSaveSuccess("Konfigurasi AI berhasil disimpan & aktif secara global!");
+      setApiKey("");
       await reload();
+      setTimeout(() => setSaveSuccess(""), 4000);
     } catch (e: any) {
-      setError(e.message);
+      setError(e.message || "Gagal menyimpan konfigurasi AI.");
     }
     setSaving(false);
   }
 
-  const currentModel = saved?.model || "—";
+  function handleApplyQuick(q: typeof QUICK_SUGGESTIONS[0]) {
+    setBaseUrl(q.baseUrl);
+    setModel(q.model);
+    setAvailableModels([]);
+    setTestResult(null);
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-4xl">
       <div>
-        <h2 className="text-lg font-bold text-gray-900">AI Assistant</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          Konfigurasi provider AI untuk semua pengguna NUSA (AI Chat di aplikasi).
-          Default: OpenRouter — Gemini Flash Lite gratis.
+        <h2 className="text-xl font-bold text-gray-900 tracking-tight">Pengaturan AI Assistant</h2>
+        <p className="text-xs text-gray-500 mt-1">
+          Hub konfigurasi AI mandiri. Masukkan Base URL dan API Key provider pilihan Anda (OpenRouter, Groq, DeepSeek, OpenAI, Ollama, dll).
         </p>
       </div>
 
-      {/* Status config aktif */}
-      <div className="bg-white rounded-xl border border-gray-100 p-5">
-        <div className="flex items-center justify-between mb-4">
-          <p className="font-semibold text-gray-900 text-sm">Config Aktif</p>
+      {/* Status Config Aktif */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Status Server Aktif</span>
           <span
-            className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${
               saved?.is_custom
-                ? "bg-green-50 text-green-700"
-                : "bg-gray-100 text-gray-600"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200/60"
+                : "bg-slate-100 text-slate-700"
             }`}
           >
-            {saved?.is_custom ? "Custom Provider" : "Default Bawaan"}
+            <span className={`w-2 h-2 rounded-full ${saved?.is_custom ? "bg-emerald-500" : "bg-slate-400"}`} />
+            {saved?.is_custom ? "Custom Provider Aktif" : "Default Bawaan"}
           </span>
         </div>
+
         {loading ? (
-          <p className="text-xs text-gray-400">Memuat...</p>
+          <p className="text-xs text-gray-400 py-2">Memuat konfigurasi aktif...</p>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50/60 p-3.5 rounded-xl border border-slate-100">
             <div>
-              <p className="text-xs text-gray-400">Base URL</p>
-              <p className="font-mono text-xs text-gray-800 mt-0.5 break-all">
-                {saved?.base_url || "—"}
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Base URL Terdaftar</p>
+              <p className="font-mono text-xs text-slate-800 mt-1 break-all font-medium">
+                {saved?.base_url || "https://openrouter.ai/api/v1"}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400">Model</p>
-              <p className="font-mono text-xs text-gray-800 mt-0.5">{currentModel}</p>
+              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Model Terdaftar</p>
+              <p className="font-mono text-xs text-slate-800 mt-1 font-semibold">
+                {saved?.model || "google/gemini-2.0-flash-lite-001"}
+              </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Form ubah provider */}
-      <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4">
-        <p className="font-semibold text-gray-900 text-sm">Ubah Provider AI</p>
-
+      {/* Form Custom Provider */}
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 shadow-sm space-y-5">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">
-            Preset Provider
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => applyPreset(p.id)}
-                className={`px-3 py-2 rounded-lg border text-xs font-medium text-left transition-colors ${
-                  preset === p.id
-                    ? "border-primary bg-primary/5 text-primary"
-                    : "border-input-border text-gray-600 hover:bg-gray-50"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-gray-400 mt-2">
-            {PRESETS.find((x) => x.id === preset)?.hint}
+          <h3 className="text-sm font-bold text-gray-900">Konfigurasi Model & Endpoint Kustom</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            Format OpenAI Compatible (`/chat/completions` & `/models`).
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Quick Fill Suggestions */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Pilihan Cepat (Opsional)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {QUICK_SUGGESTIONS.map((q) => (
+              <button
+                key={q.label}
+                type="button"
+                onClick={() => handleApplyQuick(q)}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 hover:border-primary/60 hover:bg-primary/5 text-xs text-gray-700 transition-all font-medium"
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Input Base URL & API Key */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-700">
-              Base URL
+            <label className="block text-xs font-bold text-gray-700">
+              Base URL <span className="text-rose-500">*</span>
             </label>
             <input
+              type="text"
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://openrouter.ai/api/v1"
-              className="w-full px-3 py-2 border border-input-border rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              placeholder="https://api.openai.com/v1"
+              className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-xs font-mono text-gray-900 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
             />
           </div>
+
           <div className="space-y-1.5">
-            <label className="block text-sm font-medium text-gray-700">
-              Model
+            <label className="block text-xs font-bold text-gray-700">
+              API Key <span className="text-gray-400 font-normal">(opsional / bawaan)</span>
             </label>
             <input
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="google/gemini-2.0-flash-lite-001"
-              className="w-full px-3 py-2 border border-input-border rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-xs font-mono text-gray-900 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
             />
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label className="block text-sm font-medium text-gray-700">
-            API Key{" "}
-            <span className="text-gray-400 font-normal">
-              (opsional — kosongkan untuk memakai key bawaan server)
-            </span>
-          </label>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            className="w-full px-3 py-2 border border-input-border rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
-          />
+        {/* Test Connection Button & Model Selection */}
+        <div className="pt-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={handleTestAndFetch}
+              disabled={testing || !baseUrl.trim()}
+              className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white text-xs font-semibold rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2"
+            >
+              {testing ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Menguji & Mengambil Model...
+                </>
+              ) : (
+                <>
+                  <span>⚡</span>
+                  Tes Koneksi & Ambil Model
+                </>
+              )}
+            </button>
+
+            {availableModels.length > 0 && (
+              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200">
+                ✓ {availableModels.length} Model Ditemukan
+              </span>
+            )}
+          </div>
         </div>
 
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
-        )}
+        {/* Model AI input / dropdown */}
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-gray-700">
+              Model AI <span className="text-rose-500">*</span>
+            </label>
+            {baseUrl.trim() && availableModels.length === 0 && (
+              <button
+                type="button"
+                onClick={handleLoadModelListOnly}
+                disabled={fetchingModels}
+                className="text-[11px] text-primary hover:underline font-medium"
+              >
+                {fetchingModels ? "Mengambil..." : "Ambil list model dari provider"}
+              </button>
+            )}
+          </div>
 
-        {/* Test result */}
+          {availableModels.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-mono text-gray-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              >
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="Atau ketik model manual..."
+                className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-xs font-mono text-gray-900 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none"
+              />
+            </div>
+          ) : (
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="e.g. google/gemini-2.0-flash-lite-001, deepseek-chat, gpt-4o-mini"
+              className="w-full px-3.5 py-2.5 bg-gray-50/50 border border-gray-200 rounded-xl text-xs font-mono text-gray-900 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+            />
+          )}
+          <p className="text-[11px] text-gray-400">
+            Dapat dipilih dari hasil scan otomatis provider atau diketik manual sesuai ID model.
+          </p>
+        </div>
+
+        {/* Feedback / Test Result */}
         {testResult && (
           <div
-            className={`text-xs px-3 py-2 rounded-lg ${
+            className={`p-3.5 rounded-xl border text-xs leading-relaxed ${
               testResult.ok
-                ? "bg-green-50 text-green-700"
-                : "bg-red-50 text-red-600"
+                ? "bg-emerald-50/80 border-emerald-200 text-emerald-900"
+                : "bg-rose-50/80 border-rose-200 text-rose-800"
             }`}
           >
-            <span className="font-semibold">
-              {testResult.ok ? "✅" : "❌"} {testResult.message}
-            </span>
-            {testResult.latency_ms != null && (
-              <span className="ml-2 text-gray-500">{testResult.latency_ms} ms</span>
-            )}
+            <div className="flex items-center justify-between font-semibold">
+              <span>{testResult.ok ? "✅ Koneksi Berhasil" : "❌ Uji Koneksi Gagal"}</span>
+              {testResult.latency_ms != null && (
+                <span className="font-mono text-[11px] opacity-75">{testResult.latency_ms} ms</span>
+              )}
+            </div>
+            <p className="mt-1">{testResult.message}</p>
             {testResult.reply && (
-              <p className="mt-1 text-gray-600 italic">&ldquo;{testResult.reply}&rdquo;</p>
+              <div className="mt-2 bg-white/70 p-2 rounded-lg border border-emerald-100 font-mono text-[11px] text-slate-700">
+                Respon model: &ldquo;{testResult.reply}&rdquo;
+              </div>
             )}
           </div>
         )}
 
-        <div className="flex gap-2">
+        {error && (
+          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-medium">
+            {error}
+          </div>
+        )}
+
+        {saveSuccess && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700 font-semibold">
+            {saveSuccess}
+          </div>
+        )}
+
+        {/* Submit Actions */}
+        <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
           <button
-            onClick={handleTest}
-            disabled={testing || !baseUrl.trim() || !model.trim()}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+            type="button"
+            onClick={reload}
+            disabled={loading || saving}
+            className="px-4 py-2.5 text-xs font-medium text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all"
           >
-            {testing ? "Menguji..." : "Test Koneksi"}
+            Reset Form
           </button>
           <button
+            type="button"
             onClick={handleSave}
             disabled={saving || !baseUrl.trim() || !model.trim()}
-            className="px-6 py-2 bg-primary hover:bg-primary-dark text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
+            className="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white text-xs font-bold rounded-xl transition-all shadow-sm disabled:opacity-50 flex items-center gap-2"
           >
-            {saving ? "Menyimpan..." : "Simpan Config"}
+            {saving ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                Menyimpan...
+              </>
+            ) : (
+              "Simpan & Terapkan Global"
+            )}
           </button>
         </div>
       </div>

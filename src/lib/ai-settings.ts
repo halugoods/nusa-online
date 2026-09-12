@@ -67,6 +67,7 @@ export async function saveAiSettings(opts: {
 export interface AiTestResult {
   ok: boolean;
   model?: string;
+  models?: string[];
   message: string;
   latency_ms?: number;
   reply?: string;
@@ -87,8 +88,24 @@ export async function testAiConfig(opts: {
   return {
     ok: data.ok === true,
     model: data.model,
+    models: Array.isArray(data.models) ? data.models : [],
     message: data.message ?? (data.ok ? "OK" : "Gagal"),
     latency_ms: data.latency_ms,
     reply: data.reply,
   };
+}
+
+export async function fetchAiModels(opts: {
+  baseUrl: string;
+  apiKey: string;
+}): Promise<string[]> {
+  try {
+    const data = await postAction("models", {
+      base_url: opts.baseUrl,
+      api_key: opts.apiKey,
+    });
+    return Array.isArray(data.models) ? data.models : [];
+  } catch {
+    return [];
+  }
 }
