@@ -58,6 +58,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const [custName, setCustName] = useState("");
   const [custPhone, setCustPhone] = useState("");
   const [payment, setPayment] = useState<PaymentMethod | null>(null);
+  const [copiedBank, setCopiedBank] = useState(false);
   const [orderType, setOrderType] = useState("Ambil Sendiri");
   const [pickupTime, setPickupTime] = useState("Segera");
   const [branch, setBranch] = useState<string>("");
@@ -416,9 +417,42 @@ export default function StorePage({ params }: { params: { variant: string; slug:
             <h1 className="text-lg font-extrabold text-text-primary truncate">{store.store_name}</h1>
             <div className="flex items-center gap-2 mt-0.5">
               <span className={`w-[7px] h-[7px] rounded-full ${isOpen ? "bg-success" : "bg-error"}`} />
-              <span className="text-[11px] text-text-tertiary">{isOpen ? "Buka" : "Tutup"} · Online Order</span>
+              <span className="text-[11px] text-text-tertiary">
+                {isOpen ? "Buka" : "Tutup"} {store.open_hours ? `· ${store.open_hours}` : "· Online Order"}
+              </span>
             </div>
-            {store.address && <p className="text-[11px] text-text-tertiary truncate mt-0.5">{store.address}</p>}
+            {store.description && (
+              <p className="text-[12px] text-text-secondary line-clamp-2 mt-1 leading-snug">{store.description}</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              {store.address && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] text-text-tertiary hover:text-text-primary hover:underline group"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-error flex-shrink-0">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  <span className="truncate max-w-[170px]">{store.address}</span>
+                </a>
+              )}
+              {store.whatsapp && (
+                <a
+                  href={`https://wa.me/${formatWA(store.whatsapp)}?text=${encodeURIComponent(`Halo ${store.store_name}, saya ingin bertanya seputar produk di toko online.`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 active:scale-95 transition-all"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.842-.981z"/>
+                  </svg>
+                  Chat Penjual
+                </a>
+              )}
+            </div>
           </div>
           {/* Cart icon button */}
           <button onClick={() => setCartOpen(true)} className="relative w-11 h-11 rounded-[14px] bg-input-fill flex items-center justify-center flex-shrink-0 active:scale-95 active:bg-divider transition-all">
@@ -916,13 +950,33 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                           </button>
                         ))}
                       </div>
-                      {payment?.details && payment?.name.toLowerCase() !== "tunai" && (
+                      {(payment?.details || payment?.qr) && payment?.name.toLowerCase() !== "tunai" && (
                         <div className="bg-input-fill border border-divider rounded-[10px] px-3 py-2.5">
                           <p className="text-[11px] font-bold text-text-secondary mb-1">INSTRUKSI BAYAR — {payment.name.toUpperCase()}</p>
-                          <p className="text-[12px] text-text-secondary whitespace-pre-line">{payment.details}</p>
+                          {payment.details && (
+                            <div className="mt-1 flex items-start justify-between gap-2 bg-surface/80 p-2 rounded-lg border border-divider">
+                              <p className="text-[12px] text-text-secondary whitespace-pre-line flex-1 font-medium">{payment.details}</p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (navigator?.clipboard?.writeText) {
+                                    navigator.clipboard.writeText(payment.details!);
+                                    setCopiedBank(true);
+                                    setTimeout(() => setCopiedBank(false), 2000);
+                                  }
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-semibold rounded-md border border-divider bg-surface hover:bg-input-fill active:scale-95 text-text-primary transition-all flex-shrink-0"
+                              >
+                                {copiedBank ? "Tersalin ✓" : "Salin"}
+                              </button>
+                            </div>
+                          )}
                           {payment.qr && (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={payment.qr} alt="QR" className="w-28 h-28 object-contain mt-2 mx-auto" />
+                            <div className="mt-2 text-center">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={payment.qr} alt="QRIS" className="w-36 h-36 object-contain mx-auto rounded-lg border border-divider bg-white p-1 shadow-sm" />
+                              <p className="text-[10px] text-text-tertiary mt-1">Pindai / screenshot QRIS untuk membayar</p>
+                            </div>
                           )}
                           {payment.handling_fee ? <p className="text-[11px] text-text-tertiary mt-1">Biaya admin {formatRupiah(payment.handling_fee)}</p> : null}
                         </div>
