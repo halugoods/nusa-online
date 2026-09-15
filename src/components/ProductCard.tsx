@@ -5,6 +5,7 @@ import { OnlineProduct, formatRupiah } from "@/lib/supabase";
 interface ProductCardProps {
   product: OnlineProduct;
   onAddToCart: (product: OnlineProduct) => void;
+  onOpenDetail?: (product: OnlineProduct) => void;
   cartQty?: number;
   onDecrement?: (productId: number) => void;
   onIncrement?: (productId: number) => void;
@@ -26,7 +27,7 @@ function initials(name: string): string {
 }
 
 export default function ProductCard({
-  product, onAddToCart, cartQty = 0,
+  product, onAddToCart, onOpenDetail, cartQty = 0,
   onDecrement, onIncrement,
   isFav = false, onToggleFav,
 }: ProductCardProps) {
@@ -37,7 +38,13 @@ export default function ProductCard({
 
   return (
     <div
-      onClick={() => { if (!outOfStock && cartQty === 0) onAddToCart(product); }}
+      onClick={() => {
+        if (onOpenDetail) {
+          onOpenDetail(product);
+        } else if (!outOfStock && cartQty === 0) {
+          onAddToCart(product);
+        }
+      }}
       className="group bg-surface rounded-lg border border-divider p-[10px] flex flex-col cursor-pointer active:scale-[0.98] transition-transform"
       style={{ boxShadow: "0 3px 10px rgba(0,0,0,.08)" }}
     >
@@ -111,9 +118,14 @@ export default function ProductCard({
           {formatRupiah(product.price)}
         </span>
         {product.original_price != null && product.original_price > product.price && (
-          <span className="text-[11px] font-semibold line-through text-text-tertiary">
-            {formatRupiah(product.original_price)}
-          </span>
+          <>
+            <span className="text-[11px] font-semibold line-through text-text-tertiary">
+              {formatRupiah(product.original_price)}
+            </span>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+              -{Math.round(((product.original_price - product.price) / product.original_price) * 100)}%
+            </span>
+          </>
         )}
       </div>
 

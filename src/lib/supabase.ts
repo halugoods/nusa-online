@@ -83,6 +83,7 @@ export interface CartItem {
   qty: number;
   price: number;
   subtotal: number;
+  notes?: string;
 }
 
 export interface OnlineOrder {

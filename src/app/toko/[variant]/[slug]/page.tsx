@@ -49,6 +49,11 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"home" | "favorites" | "history" | "member">("home");
 
+  /* product detail modal */
+  const [detailProduct, setDetailProduct] = useState<OnlineProduct | null>(null);
+  const [detailQty, setDetailQty] = useState(1);
+  const [detailNote, setDetailNote] = useState("");
+
   /* cart */
   const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
@@ -180,12 +185,39 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const cartTotal = cart.reduce((s, i) => s + i.subtotal, 0);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
-  const addToCart = (product: OnlineProduct) => {
+  const addToCart = (product: OnlineProduct, qtyToAdd = 1, noteToAdd?: string) => {
     setCart((prev) => {
       const ex = prev.find((c) => c.product_id === product.product_id);
-      if (ex) return prev.map((c) => c.product_id === product.product_id ? { ...c, qty: c.qty + 1, subtotal: (c.qty + 1) * c.price } : c);
-      return [...prev, { product_id: product.product_id, name: product.name, qty: 1, price: product.price, subtotal: product.price }];
+      if (ex) {
+        return prev.map((c) =>
+          c.product_id === product.product_id
+            ? {
+                ...c,
+                qty: c.qty + qtyToAdd,
+                subtotal: (c.qty + qtyToAdd) * c.price,
+                notes: noteToAdd !== undefined ? noteToAdd : c.notes,
+              }
+            : c,
+        );
+      }
+      return [
+        ...prev,
+        {
+          product_id: product.product_id,
+          name: product.name,
+          qty: qtyToAdd,
+          price: product.price,
+          subtotal: product.price * qtyToAdd,
+          notes: noteToAdd,
+        },
+      ];
     });
+  };
+
+  const updateCartItemNote = (pid: number, note: string) => {
+    setCart((prev) =>
+      prev.map((c) => (c.product_id === pid ? { ...c, notes: note } : c)),
+    );
   };
 
   const decCart = (pid: number) => {
@@ -452,6 +484,29 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                   Chat Penjual
                 </a>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  const url = window.location.href;
+                  if (navigator.share) {
+                    navigator.share({
+                      title: store.store_name,
+                      text: `Kunjungi toko online ${store.store_name}`,
+                      url,
+                    }).catch(() => {});
+                  } else if (navigator.clipboard) {
+                    navigator.clipboard.writeText(url);
+                    alert("Link toko online berhasil disalin!");
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold text-text-secondary bg-surface border border-divider hover:bg-input-fill active:scale-95 transition-all cursor-pointer"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                Bagikan
+              </button>
             </div>
           </div>
           {/* Cart icon button */}
@@ -520,6 +575,11 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                 <ProductCard
                   key={p.product_id} product={p}
                   onAddToCart={addToCart}
+                  onOpenDetail={(prod) => {
+                    setDetailProduct(prod);
+                    setDetailQty(1);
+                    setDetailNote("");
+                  }}
                   cartQty={cart.find((c) => c.product_id === p.product_id)?.qty ?? 0}
                   onDecrement={(pid) => decCart(pid)}
                   onIncrement={(pid) => addToCart(p)}
@@ -545,6 +605,11 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                 <ProductCard
                   key={p.product_id} product={p}
                   onAddToCart={addToCart}
+                  onOpenDetail={(prod) => {
+                    setDetailProduct(prod);
+                    setDetailQty(1);
+                    setDetailNote("");
+                  }}
                   cartQty={cart.find((c) => c.product_id === p.product_id)?.qty ?? 0}
                   onDecrement={(pid) => decCart(pid)}
                   onIncrement={(pid) => addToCart(p)}
@@ -799,22 +864,37 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                 ) : (
                   <div className="space-y-2 pb-4">
                     {cart.map((item) => (
-                      <div key={item.product_id} className="flex items-center gap-0 p-3 rounded-[14px] border border-border-subtle bg-surface">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-text-primary truncate">{item.name}</p>
-                          <p className="text-xs text-text-secondary mt-0.5">{formatRupiah(item.price)}</p>
+                      <div key={item.product_id} className="p-3 rounded-[14px] border border-border-subtle bg-surface">
+                        <div className="flex items-center gap-0">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-text-primary truncate">{item.name}</p>
+                            <p className="text-xs text-text-secondary mt-0.5">{formatRupiah(item.price)}</p>
+                          </div>
+                          {/* Qty stepper (match _CartItemTile / storefront cart) */}
+                          <div className="flex items-center h-8 border border-divider rounded-[10px] bg-background flex-shrink-0">
+                            <button onClick={() => decCart(item.product_id)} className="w-[30px] h-8 flex items-center justify-center text-text-secondary">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/></svg>
+                            </button>
+                            <span className="text-[13px] font-bold text-text-primary">{item.qty}</span>
+                            <button onClick={() => addToCart({ product_id: item.product_id, name: item.name, price: item.price } as OnlineProduct)} className="w-[30px] h-8 flex items-center justify-center text-text-secondary">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                            </button>
+                          </div>
+                          <span className="text-sm font-semibold ml-2 min-w-[70px] text-right" style={{ color: theme.primary }}>{formatRupiah(item.subtotal)}</span>
                         </div>
-                        {/* Qty stepper (match _CartItemTile / storefront cart) */}
-                        <div className="flex items-center h-8 border border-divider rounded-[10px] bg-background flex-shrink-0">
-                          <button onClick={() => decCart(item.product_id)} className="w-[30px] h-8 flex items-center justify-center text-text-secondary">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/></svg>
-                          </button>
-                          <span className="text-[13px] font-bold text-text-primary">{item.qty}</span>
-                          <button onClick={() => addToCart({ product_id: item.product_id, name: item.name, price: item.price } as OnlineProduct)} className="w-[30px] h-8 flex items-center justify-center text-text-secondary">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
-                          </button>
+                        {/* Item note input */}
+                        <div className="mt-2 pt-1.5 border-t border-divider/60 flex items-center gap-1.5">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-tertiary flex-shrink-0">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                          </svg>
+                          <input
+                            type="text"
+                            placeholder="Catatan item (cth: tanpa es, pedas sedang)..."
+                            value={item.notes ?? ""}
+                            onChange={(e) => updateCartItemNote(item.product_id, e.target.value)}
+                            className="flex-1 text-[11px] bg-transparent outline-none text-text-primary placeholder:text-text-tertiary"
+                          />
                         </div>
-                        <span className="text-sm font-semibold ml-2 min-w-[70px] text-right" style={{ color: theme.primary }}>{formatRupiah(item.subtotal)}</span>
                       </div>
                     ))}
                   </div>
@@ -1039,6 +1119,156 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                   )}
                 </div>
               )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ═══════ PRODUCT DETAIL MODAL ═══════ */}
+      {detailProduct && (
+        <>
+          <div
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm animate-fade-in"
+            onClick={() => setDetailProduct(null)}
+          />
+          <div className="fixed inset-x-0 bottom-0 z-50 max-w-[480px] mx-auto animate-slide-up">
+            <div className="bg-surface rounded-t-2xl max-h-[85dvh] flex flex-col shadow-2xl border-t border-divider overflow-hidden">
+              {/* Handle & Close */}
+              <div className="relative pt-3 pb-2 px-4 flex items-center justify-between border-b border-divider">
+                <div className="w-8" />
+                <div className="w-10 h-1 rounded-full bg-divider" />
+                <button
+                  type="button"
+                  onClick={() => setDetailProduct(null)}
+                  className="w-8 h-8 rounded-full bg-input-fill flex items-center justify-center text-text-secondary active:scale-90 transition-all cursor-pointer"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Large Product Image */}
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-input-fill border border-divider flex items-center justify-center">
+                  {detailProduct.image_url ? (
+                    <img
+                      src={detailProduct.image_url}
+                      alt={detailProduct.name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="w-full h-full flex items-center justify-center"
+                      style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}
+                    >
+                      <span className="text-4xl font-extrabold text-white tracking-widest select-none">
+                        {detailProduct.name.substring(0, 2).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+                  {/* Stock pill */}
+                  <span
+                    className="absolute top-2.5 left-2.5 px-2.5 py-1 rounded-full text-xs font-bold shadow-sm"
+                    style={{
+                      background: detailProduct.stock <= 0 ? "#FEE2E2" : detailProduct.stock <= 5 ? "#FEF3C7" : "rgba(255,255,255,.95)",
+                      color: detailProduct.stock <= 0 ? "#DC2626" : detailProduct.stock <= 5 ? "#D97706" : "var(--primary)",
+                    }}
+                  >
+                    {detailProduct.stock <= 0 ? "Stok Habis" : `Sisa ${detailProduct.stock}`}
+                  </span>
+                </div>
+
+                {/* Name & Category */}
+                <div>
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-input-fill text-text-tertiary">
+                    {detailProduct.category}
+                  </span>
+                  <h2 className="text-lg font-bold text-text-primary mt-1 leading-snug">
+                    {detailProduct.name}
+                  </h2>
+                </div>
+
+                {/* Price & Discount */}
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <span className="text-xl font-extrabold" style={{ color: theme.primary }}>
+                    {formatRupiah(detailProduct.price)}
+                  </span>
+                  {detailProduct.original_price != null && detailProduct.original_price > detailProduct.price && (
+                    <>
+                      <span className="text-sm font-semibold line-through text-text-tertiary">
+                        {formatRupiah(detailProduct.original_price)}
+                      </span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
+                        -{Math.round(((detailProduct.original_price - detailProduct.price) / detailProduct.original_price) * 100)}%
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                {/* Description */}
+                {detailProduct.description ? (
+                  <div className="pt-2 border-t border-divider">
+                    <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Deskripsi</p>
+                    <p className="text-sm text-text-secondary whitespace-pre-line leading-relaxed">
+                      {detailProduct.description}
+                    </p>
+                  </div>
+                ) : null}
+
+                {/* Item note for cart */}
+                <div className="pt-2 border-t border-divider">
+                  <p className="text-xs font-bold text-text-secondary uppercase tracking-wider mb-1">Catatan Tambahan (Opsional)</p>
+                  <input
+                    type="text"
+                    placeholder="Contoh: pedas sedang, pisahkan saus..."
+                    value={detailNote}
+                    onChange={(e) => setDetailNote(e.target.value)}
+                    className="w-full px-3 py-2.5 rounded-lg border border-divider text-sm text-text-primary outline-none bg-input-fill focus:border-[var(--primary)] transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Bottom action bar */}
+              <div className="p-4 border-t border-divider bg-background flex items-center gap-3">
+                {/* Qty Selector */}
+                <div className="flex items-center h-11 border border-divider rounded-[12px] bg-surface flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setDetailQty((q) => Math.max(1, q - 1))}
+                    disabled={detailQty <= 1 || detailProduct.stock <= 0}
+                    className="w-10 h-11 flex items-center justify-center text-text-secondary disabled:opacity-30 cursor-pointer"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/></svg>
+                  </button>
+                  <span className="w-8 text-center text-sm font-extrabold text-text-primary">
+                    {detailQty}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setDetailQty((q) => Math.min(detailProduct.stock, q + 1))}
+                    disabled={detailQty >= detailProduct.stock || detailProduct.stock <= 0}
+                    className="w-10 h-11 flex items-center justify-center text-text-secondary disabled:opacity-30 cursor-pointer"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                </div>
+
+                {/* Add to cart button */}
+                <button
+                  type="button"
+                  disabled={detailProduct.stock <= 0}
+                  onClick={() => {
+                    addToCart(detailProduct, detailQty, detailNote.trim() || undefined);
+                    setDetailProduct(null);
+                  }}
+                  className="flex-1 h-11 rounded-[12px] text-white font-bold text-sm flex items-center justify-center gap-2 active:opacity-90 active:scale-[0.98] transition-all disabled:opacity-40 cursor-pointer"
+                  style={{ background: `linear-gradient(135deg, ${theme.primary}, ${theme.dark})` }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14"/></svg>
+                  {detailProduct.stock <= 0
+                    ? "Stok Habis"
+                    : `+ Keranjang (${formatRupiah(detailProduct.price * detailQty)})`}
+                </button>
+              </div>
             </div>
           </div>
         </>

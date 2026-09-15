@@ -20,6 +20,9 @@ const TABS = [
   { id: "sheets",    label: "Google Sheets", href: "/dashboard?tab=sheets" },
   { id: "sounds",    label: "Notifikasi", href: "/dashboard/sounds" },
   { id: "backup",    label: "Backup & Recovery", href: "/dashboard?tab=backup" },
+  { id: "diagnostic", label: "Diagnostic", href: "/dashboard?tab=diagnostic" },
+  { id: "support",   label: "Support",   href: "/dashboard?tab=support" },
+  { id: "notifications", label: "Notifications", href: "/dashboard?tab=notifications" },
 ];
 
 export default function DashboardShell({
