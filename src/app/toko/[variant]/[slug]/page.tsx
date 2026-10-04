@@ -1256,14 +1256,9 @@ export default function StorePage({ params }: { params: { variant: string; slug:
                     {formatRupiah(detailProduct.price)}
                   </span>
                   {detailProduct.original_price != null && detailProduct.original_price > detailProduct.price && (
-                    <>
-                      <span className="text-sm font-semibold line-through text-text-tertiary">
-                        {formatRupiah(detailProduct.original_price)}
-                      </span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
-                        -{Math.round(((detailProduct.original_price - detailProduct.price) / detailProduct.original_price) * 100)}%
-                      </span>
-                    </>
+                    <span className="text-sm font-semibold line-through text-text-tertiary">
+                      {formatRupiah(detailProduct.original_price)}
+                    </span>
                   )}
                 </div>
 

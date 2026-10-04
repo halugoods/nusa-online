@@ -125,14 +125,9 @@ export default function ProductCard({
           {formatRupiah(product.price)}
         </span>
         {product.original_price != null && product.original_price > product.price && (
-          <>
-            <span className="text-[11px] font-semibold line-through text-text-tertiary">
-              {formatRupiah(product.original_price)}
-            </span>
-            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400">
-              -{Math.round(((product.original_price - product.price) / product.original_price) * 100)}%
-            </span>
-          </>
+          <span className="text-[11px] font-semibold line-through text-text-tertiary">
+            {formatRupiah(product.original_price)}
+          </span>
         )}
       </div>
 
