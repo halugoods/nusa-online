@@ -119,7 +119,7 @@ export default function PayPage() {
   useEffect(() => clearPoll, []);
 
   async function createPayment(googleId: string) {
-    const res = await fetch(`${WORKER_URL}/api/instanpay/create`, {
+    const res = await fetch(`${WORKER_URL}/api/ezpzpay/create`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -135,7 +135,7 @@ export default function PayPage() {
   }
 
   async function pollStatus(txId: string) {
-    const res = await fetch(`${WORKER_URL}/api/instanpay/status`, {
+    const res = await fetch(`${WORKER_URL}/api/ezpzpay/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ transactionId: txId }),
@@ -255,9 +255,17 @@ export default function PayPage() {
             <div className="bg-input-fill border border-input-border rounded-lg p-4 mb-4 text-left">
               <p className="text-text-tertiary text-xs mb-1">Key Lisensi</p>
               <p className="text-gray-900 font-mono text-sm break-all">{licenseKey}</p>
-              {expiresAt && (
+              {expiresAt ? (
                 <p className="text-text-tertiary text-xs mt-2">
                   Berlaku sampai {new Date(expiresAt).toLocaleDateString("id-ID")}
+                </p>
+              ) : selectedPackage === "1bulan" ? (
+                <p className="text-blue-600 text-xs mt-2">
+                  ⏳ Masa aktif 30 hari akan dimulai saat pertama kali aktivasi di aplikasi
+                </p>
+              ) : (
+                <p className="text-green-600 text-xs mt-2">
+                  ✨ Lisensi Lifetime (Akses Seumur Hidup)
                 </p>
               )}
             </div>

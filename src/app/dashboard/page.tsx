@@ -1026,11 +1026,15 @@ function GenerateTab() {
                 <p className="text-xs text-gray-500 mt-0.5">
                   Produk: {productName(result.product ?? "")} · Tier: {TIERS.find((t) => t.id === result.tier)?.label ?? result.tier}
                 </p>
-                {result.expires_at && (
+                {result.expires_at ? (
                   <span className="inline-block mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
                     ⏳ Expires: {new Date(result.expires_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                   </span>
-                )}
+                ) : result.tier === "1month" ? (
+                  <span className="inline-block mt-1 text-xs text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                    ⏳ Masa aktif: 30 hari (dihitung sejak aktivasi pertama di HP)
+                  </span>
+                ) : null}
               </div>
               <button
                 onClick={copyAllKeys}
