@@ -46,6 +46,7 @@ export default function StorePage({ params }: { params: { variant: string; slug:
   const [categories, setCategories] = useState<string[]>(["Semua"]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("Semua");
+  const [stockFilter, setStockFilter] = useState<"all" | "available" | "out">("all");
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"home" | "favorites" | "history" | "member">("home");
 
@@ -348,12 +349,28 @@ export default function StorePage({ params }: { params: { variant: string; slug:
     searchOrders();
   };
 
-  /* ── filter ── */
-  const filtered = products.filter((p) => {
-    if (category !== "Semua" && p.category !== category) return false;
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  /* ── filter & sorting: produk tersedia selalu di atas ── */
+  const categoryProducts = products.filter((p) => category === "Semua" || p.category === category);
+  const availableCount = categoryProducts.filter((p) => p.stock > 0).length;
+  const outCount = categoryProducts.filter((p) => p.stock <= 0).length;
+
+  const filtered = products
+    .filter((p) => {
+      if (category !== "Semua" && p.category !== category) return false;
+      if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+      if (stockFilter === "available" && p.stock <= 0) return false;
+      if (stockFilter === "out" && p.stock > 0) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      // Produk yang tersedia (stock > 0) selalu di atas produk yang habis (stock <= 0)
+      const aAvailable = a.stock > 0 ? 1 : 0;
+      const bAvailable = b.stock > 0 ? 1 : 0;
+      if (aAvailable !== bAvailable) {
+        return bAvailable - aAvailable;
+      }
+      return (a.name || "").localeCompare(b.name || "");
+    });
   const favProducts = products.filter((p) => favIds.includes(p.product_id));
 
   const cssVars = {
@@ -620,6 +637,53 @@ export default function StorePage({ params }: { params: { variant: string; slug:
               {c}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* ═══════ STOCK AVAILABILITY FILTER (Tersedia / Habis) ═══════ */}
+      {tab === "home" && (
+        <div className="flex items-center gap-1.5 px-3 py-1 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setStockFilter("all")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+              stockFilter === "all"
+                ? "bg-text-primary text-background shadow-sm"
+                : "bg-input-fill text-text-secondary border border-divider hover:text-text-primary"
+            }`}
+          >
+            <span>Semua Stok</span>
+            <span className="text-[10px] font-semibold opacity-75">
+              ({categoryProducts.length})
+            </span>
+          </button>
+          <button
+            onClick={() => setStockFilter("available")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+              stockFilter === "available"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "bg-input-fill text-text-secondary border border-divider hover:text-emerald-600"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+            <span>Tersedia</span>
+            <span className="text-[10px] font-semibold opacity-85">
+              ({availableCount})
+            </span>
+          </button>
+          <button
+            onClick={() => setStockFilter("out")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+              stockFilter === "out"
+                ? "bg-rose-600 text-white shadow-sm"
+                : "bg-input-fill text-text-secondary border border-divider hover:text-rose-600"
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+            <span>Habis</span>
+            <span className="text-[10px] font-semibold opacity-85">
+              ({outCount})
+            </span>
+          </button>
         </div>
       )}
 
