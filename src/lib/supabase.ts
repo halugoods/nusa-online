@@ -215,7 +215,28 @@ export async function getProducts(
     store_id: storeId,
     ...(category ? { category } : {}),
   });
-  return data?.products ?? [];
+  if (data?.products && data.products.length > 0) {
+    return data.products;
+  }
+
+  // Fallback: fetch directly from R2 public CDN catalog if D1 is empty/limited
+  try {
+    const res = await fetch(`${WORKER_URL}/storage/nusa-images/${storeId}/online_products.json`, {
+      cache: "no-cache",
+    });
+    if (res.ok) {
+      const all = (await res.json()) as OnlineProduct[];
+      return all
+        .filter((p) => {
+          if (!p.is_published) return false;
+          if (category && category !== "Semua" && p.category !== category) return false;
+          return true;
+        })
+        .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    }
+  } catch (_) {}
+
+  return [];
 }
 
 // ─── Store config (order types, pickup, payment methods, branches) ──
