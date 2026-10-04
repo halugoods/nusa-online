@@ -540,6 +540,69 @@ export default function StorePage({ params }: { params: { variant: string; slug:
         </div>
       )}
 
+      {/* ═══════ PROMO VOUCHER BANNER (JIKA ADA PROMO TOKO AKTIF) ═══════ */}
+      {tab === "home" && promos.length > 0 && (
+        <div className="px-3 pt-2 pb-1">
+          <div className="flex gap-2.5 overflow-x-auto scrollbar-none py-1">
+            {promos.map((pr) => {
+              const isApplied = promo?.id === pr.id;
+              return (
+                <div
+                  key={pr.id}
+                  className="flex-shrink-0 w-[240px] p-2.5 rounded-xl border border-divider bg-surface shadow-sm relative overflow-hidden flex flex-col justify-between"
+                  style={{
+                    borderColor: isApplied ? "var(--primary)" : undefined,
+                    background: isApplied ? "var(--primary-soft)" : undefined,
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 uppercase tracking-wide">
+                          PROMO
+                        </span>
+                        <span className="text-[12px] font-black text-text-primary truncate">
+                          {pr.code}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-text-secondary mt-0.5 font-medium line-clamp-1">
+                        {pr.title || `Hemat ${pr.type === "persen" ? `${pr.value}%` : formatRupiah(pr.value)}`}
+                      </p>
+                    </div>
+                    <span className="text-[13px] font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">
+                      {pr.type === "persen" ? `-${pr.value}%` : `-${formatRupiah(pr.value)}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-divider/60">
+                    <span className="text-[10px] text-text-tertiary">
+                      {pr.min_spend > 0 ? `Min. ${formatRupiah(pr.min_spend)}` : "Tanpa min. belanja"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isApplied) {
+                          setPromo(null);
+                          setPromoCode("");
+                        } else {
+                          applyPromo(pr.code);
+                        }
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
+                      style={{
+                        background: isApplied ? "var(--primary)" : "var(--primary-soft)",
+                        color: isApplied ? "#fff" : "var(--primary)",
+                      }}
+                    >
+                      {isApplied ? "Dipakai ✓" : "Pakai"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ═══════ CATEGORY CHIPS (dinamis dari kategori produk asli) ═══════ */}
       {tab === "home" && (
         <div className="flex gap-2 px-3 py-2 overflow-x-auto scrollbar-none">

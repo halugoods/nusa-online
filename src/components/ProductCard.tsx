@@ -85,6 +85,13 @@ export default function ProductCard({
           {outOfStock ? "Habis" : `${product.stock}x`}
         </span>
 
+        {/* Promo discount badge — bottom left of image */}
+        {product.original_price != null && product.original_price > product.price && (
+          <span className="absolute bottom-[6px] left-[6px] px-[6px] py-[2px] rounded text-[10px] font-black z-[2] shadow-sm bg-rose-600 text-white tracking-wide">
+            DISKON -{Math.round(((product.original_price - product.price) / product.original_price) * 100)}%
+          </span>
+        )}
+
         {/* Out of stock overlay */}
         {outOfStock && <div className="absolute inset-0 bg-white/40" />}
 
