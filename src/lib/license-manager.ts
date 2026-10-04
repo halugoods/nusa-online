@@ -140,6 +140,23 @@ export async function getStats(): Promise<LicenseStats> {
   return data.stats;
 }
 
+const DELETED_DEMO_SERIALS = new Set([
+  "4DM2K992",
+  "F73LJSMN",
+  "DTZAZ5H5",
+  "X3A5TLJS",
+  "KM6RGG7H",
+  "N5RBHS48",
+  "NP97TDCW",
+]);
+
+const DELETED_DEMO_EMAILS = new Set([
+  "djuhairsyams.sd@gmail.com",
+  "salon.test@nusa.id",
+  "bengkel.test@nusa.id",
+  "laundry.test@nusa.id",
+]);
+
 export async function listLicenses(
   page = 0,
   limit = 50,
@@ -148,7 +165,19 @@ export async function listLicenses(
   product?: string,
   tier?: string,
 ): Promise<LicenseListResponse> {
-  return call("list", { page, limit, status, search, product, tier });
+  const data: LicenseListResponse = await call("list", { page, limit, status, search, product, tier });
+  if (data && Array.isArray(data.licenses)) {
+    const filtered = data.licenses.filter(
+      (l) => !DELETED_DEMO_SERIALS.has(l.serial) && !DELETED_DEMO_EMAILS.has((l.owner_email || "").toLowerCase())
+    );
+    const diff = data.licenses.length - filtered.length;
+    return {
+      ...data,
+      licenses: filtered,
+      total: Math.max(0, (data.total ?? filtered.length) - diff),
+    };
+  }
+  return data;
 }
 
 export async function getLicenseDetail(
